@@ -367,17 +367,17 @@ function alloc(
 export const VISION_ALLOCATIONS_SEED: Omit<TemplateAllocation, "tenantId">[] = [
   alloc("alloc-vc-leadership", "Corporate HQ", "leadership", "team", VISION_INITIAL_NODE_TARGETS.leadership!, "confirmed"),
   alloc("alloc-vc-dubai", "Dubai, UAE", "branch-head", "team", VISION_INITIAL_NODE_TARGETS["branch-dubai"]!, "confirmed"),
-  alloc("alloc-vc-sea", "Sea Freight Dept", "sales-manager", "team", VISION_INITIAL_NODE_TARGETS["sm-sea"]!, "partial"),
-  alloc("alloc-vc-import", "Import Team", "sales-lead", "team", VISION_INITIAL_NODE_TARGETS["sl-import"]!, "partial"),
+  alloc("alloc-vc-sea", "Sea Freight Dept", "sales-manager", "team", VISION_INITIAL_NODE_TARGETS["sm-sea"]!, "draft"),
+  alloc("alloc-vc-import", "Import Team", "sales-lead", "team", VISION_INITIAL_NODE_TARGETS["sl-import"]!, "draft"),
   alloc("alloc-vc-export", "Export Team", "sales-lead", "team", VISION_INITIAL_NODE_TARGETS["sl-export"]!, "confirmed"),
   alloc("alloc-vc-dileep", "Dileep", "sales-executive", "individual", VISION_INITIAL_NODE_TARGETS["se-ahmed"]!, "confirmed"),
   alloc("alloc-vc-krishna", "Krishna", "sales-executive", "individual", VISION_INITIAL_NODE_TARGETS["se-priya"]!, "confirmed"),
-  alloc("alloc-vc-guru", "Guru", "sales-executive", "individual", VISION_INITIAL_NODE_TARGETS["se-ravi"]!, "partial"),
-  alloc("alloc-vc-vishnu", "Vishnu", "sales-executive", "individual", VISION_INITIAL_NODE_TARGETS["se-sara"]!, "partial"),
-  alloc("alloc-vc-sajeer", "Sajeer", "sales-executive", "individual", VISION_INITIAL_NODE_TARGETS["se-sajeer"]!, "partial"),
-  alloc("alloc-vc-akshai", "Akshai", "sales-executive", "individual", VISION_INITIAL_NODE_TARGETS["se-akshai"]!, "partial"),
-  alloc("alloc-vc-vishnu-muraly", "Vishnu Muraly", "sales-executive", "individual", VISION_INITIAL_NODE_TARGETS["se-vishnu-muraly"]!, "partial"),
-  alloc("alloc-vc-eric", "Eric", "sales-executive", "individual", VISION_INITIAL_NODE_TARGETS["se-eric"]!, "partial"),
+  alloc("alloc-vc-guru", "Guru", "sales-executive", "individual", VISION_INITIAL_NODE_TARGETS["se-ravi"]!, "draft"),
+  alloc("alloc-vc-vishnu", "Vishnu", "sales-executive", "individual", VISION_INITIAL_NODE_TARGETS["se-sara"]!, "draft"),
+  alloc("alloc-vc-sajeer", "Sajeer", "sales-executive", "individual", VISION_INITIAL_NODE_TARGETS["se-sajeer"]!, "draft"),
+  alloc("alloc-vc-akshai", "Akshai", "sales-executive", "individual", VISION_INITIAL_NODE_TARGETS["se-akshai"]!, "draft"),
+  alloc("alloc-vc-vishnu-muraly", "Vishnu Muraly", "sales-executive", "individual", VISION_INITIAL_NODE_TARGETS["se-vishnu-muraly"]!, "draft"),
+  alloc("alloc-vc-eric", "Eric", "sales-executive", "individual", VISION_INITIAL_NODE_TARGETS["se-eric"]!, "draft"),
 ]
 
 function ragFromAttainmentPct(pct: number): RAGStatus {
