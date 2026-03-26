@@ -1,0 +1,744 @@
+{
+  "dubaiCentral": {
+    "NEW CUSTOMER": {
+      "t": 200,
+      "a": 26
+    },
+    "TOTAL JOBS": {
+      "t": 5600,
+      "a": 1272
+    },
+    "TOTAL SALES": {
+      "t": 70000000,
+      "a": 22955388.359999996
+    },
+    "SALES COLLECTION": {
+      "t": 70000000,
+      "a": 24101051
+    },
+    "GP": {
+      "t": 7000000,
+      "a": 2349285.98
+    },
+    "ENQUIRY": {
+      "t": 9500,
+      "a": 1847
+    },
+    "IMPORT SEA JOBS": {
+      "t": 2400,
+      "a": 541
+    },
+    "EXPORT SEA JOBS": {
+      "t": 1225,
+      "a": 152
+    },
+    "IMPORT SEA CTNR": {
+      "t": 6000,
+      "a": 721
+    },
+    "EXPORT SEA CTNR": {
+      "t": 2000,
+      "a": 186
+    },
+    "AIR IMPORT JOBS": {
+      "t": 545,
+      "a": 57
+    },
+    "AIR EXPORT JOBS": {
+      "t": 420,
+      "a": 72
+    },
+    "AIR IMPORT TONS": {
+      "t": 300,
+      "a": 104.535
+    },
+    "AIR EXPORT TONS": {
+      "t": 200,
+      "a": 32.403
+    },
+    "OVERLAND": {
+      "t": 350,
+      "a": 92
+    },
+    "WAREHOUSING JOBS": {
+      "t": 40,
+      "a": 2
+    },
+    "PROJECT/ BREAKBULK": {
+      "t": 12,
+      "a": 2
+    },
+    "SALES BLITZ": {
+      "t": 12,
+      "a": 1
+    },
+    "100 DIAL": {
+      "t": 12,
+      "a": 1
+    },
+    "OUTDOOR EVENT": {
+      "t": 6,
+      "a": 0
+    }
+  },
+  "managersBlock1": {
+    "Dileep": {
+      "NEW CUSTOMER": {
+        "t": 15,
+        "a": 1
+      },
+      "TOTAL JOBS": {
+        "t": 1000,
+        "a": 341
+      },
+      "TOTAL SALES": {
+        "t": 21000000,
+        "a": 13110608.69
+      },
+      "SALES COLLECTION": {
+        "t": 21000000,
+        "a": 15296883
+      },
+      "GP": {
+        "t": 2000000,
+        "a": 1187878.53
+      },
+      "ENQUIRY": {
+        "t": 1500,
+        "a": 370
+      },
+      "IMPORT SEA JOBS": {
+        "t": 500,
+        "a": 257
+      },
+      "EXPORT SEA JOBS": {
+        "t": 100,
+        "a": 8
+      },
+      "IMPORT SEA CTNR": {
+        "t": 2200,
+        "a": 321
+      },
+      "EXPORT SEA CTNR": {
+        "t": 450,
+        "a": 10
+      },
+      "AIR IMPORT JOBS": {
+        "t": 100,
+        "a": 1
+      },
+      "AIR EXPORT JOBS": {
+        "t": 25,
+        "a": 0
+      },
+      "AIR IMPORT TONS": {
+        "t": 25,
+        "a": 4
+      },
+      "AIR EXPORT TONS": {
+        "t": 15,
+        "a": 0
+      },
+      "OVERLAND": {
+        "t": 17,
+        "a": 0
+      },
+      "WAREHOUSING JOBS": {
+        "t": 5,
+        "a": 0
+      },
+      "PROJECT/ BREAKBULK": {
+        "t": 2,
+        "a": 2
+      },
+      "SALES BLITZ": {
+        "t": null,
+        "a": null
+      },
+      "100 DIAL": {
+        "t": null,
+        "a": null
+      },
+      "OUTDOOR EVENT": {
+        "t": null,
+        "a": null
+      }
+    },
+    "Guru": {
+      "NEW CUSTOMER": {
+        "t": 20,
+        "a": 3
+      },
+      "TOTAL JOBS": {
+        "t": 500,
+        "a": 56
+      },
+      "TOTAL SALES": {
+        "t": 8000000,
+        "a": 977808.83
+      },
+      "SALES COLLECTION": {
+        "t": 8000000,
+        "a": 462064
+      },
+      "GP": {
+        "t": 900000,
+        "a": 123381.15
+      },
+      "ENQUIRY": {
+        "t": 1200,
+        "a": null
+      },
+      "IMPORT SEA JOBS": {
+        "t": 125,
+        "a": 27
+      },
+      "EXPORT SEA JOBS": {
+        "t": 260,
+        "a": 22
+      },
+      "IMPORT SEA CTNR": {
+        "t": 700,
+        "a": 53
+      },
+      "EXPORT SEA CTNR": {
+        "t": 400,
+        "a": 44
+      },
+      "AIR IMPORT JOBS": {
+        "t": 50,
+        "a": 7
+      },
+      "AIR EXPORT JOBS": {
+        "t": 35,
+        "a": 2
+      },
+      "AIR IMPORT TONS": {
+        "t": 15,
+        "a": 30.5
+      },
+      "AIR EXPORT TONS": {
+        "t": 15,
+        "a": 0.8
+      },
+      "OVERLAND": {
+        "t": 17,
+        "a": 0
+      },
+      "WAREHOUSING JOBS": {
+        "t": 4,
+        "a": 1
+      },
+      "PROJECT/ BREAKBULK": {
+        "t": 1,
+        "a": 0
+      },
+      "SALES BLITZ": {
+        "t": null,
+        "a": null
+      },
+      "100 DIAL": {
+        "t": null,
+        "a": null
+      },
+      "OUTDOOR EVENT": {
+        "t": null,
+        "a": null
+      }
+    },
+    "Krishna": {
+      "NEW CUSTOMER": {
+        "t": 20,
+        "a": 3
+      },
+      "TOTAL JOBS": {
+        "t": 1000,
+        "a": 266
+      },
+      "TOTAL SALES": {
+        "t": 7200000,
+        "a": 1426058.13
+      },
+      "SALES COLLECTION": {
+        "t": 7200000,
+        "a": 1389260
+      },
+      "GP": {
+        "t": 720000,
+        "a": 112437.81
+      },
+      "ENQUIRY": {
+        "t": 1500,
+        "a": 408
+      },
+      "IMPORT SEA JOBS": {
+        "t": 500,
+        "a": 29
+      },
+      "EXPORT SEA JOBS": {
+        "t": 250,
+        "a": 1
+      },
+      "IMPORT SEA CTNR": {
+        "t": 500,
+        "a": 38
+      },
+      "EXPORT SEA CTNR": {
+        "t": 250,
+        "a": 1
+      },
+      "AIR IMPORT JOBS": {
+        "t": 60,
+        "a": 5
+      },
+      "AIR EXPORT JOBS": {
+        "t": 40,
+        "a": 1
+      },
+      "AIR IMPORT TONS": {
+        "t": 50,
+        "a": 14.7
+      },
+      "AIR EXPORT TONS": {
+        "t": 20,
+        "a": 0.018
+      },
+      "OVERLAND": {
+        "t": 22,
+        "a": 5
+      },
+      "WAREHOUSING JOBS": {
+        "t": 5,
+        "a": 1
+      },
+      "PROJECT/ BREAKBULK": {
+        "t": 2,
+        "a": null
+      },
+      "SALES BLITZ": {
+        "t": null,
+        "a": null
+      },
+      "100 DIAL": {
+        "t": null,
+        "a": null
+      },
+      "OUTDOOR EVENT": {
+        "t": null,
+        "a": null
+      }
+    },
+    "Vishnu": {
+      "NEW CUSTOMER": {
+        "t": 20,
+        "a": 1
+      },
+      "TOTAL JOBS": {
+        "t": 800,
+        "a": 197
+      },
+      "TOTAL SALES": {
+        "t": 10000000,
+        "a": 2688141.88
+      },
+      "SALES COLLECTION": {
+        "t": 10000000,
+        "a": 2920377
+      },
+      "GP": {
+        "t": 1000000,
+        "a": 283482.54
+      },
+      "ENQUIRY": {
+        "t": 1500,
+        "a": 311
+      },
+      "IMPORT SEA JOBS": {
+        "t": 350,
+        "a": 75
+      },
+      "EXPORT SEA JOBS": {
+        "t": 50,
+        "a": 0
+      },
+      "IMPORT SEA CTNR": {
+        "t": 700,
+        "a": 99
+      },
+      "EXPORT SEA CTNR": {
+        "t": 100,
+        "a": 0
+      },
+      "AIR IMPORT JOBS": {
+        "t": 160,
+        "a": 20
+      },
+      "AIR EXPORT JOBS": {
+        "t": 25,
+        "a": 4
+      },
+      "AIR IMPORT TONS": {
+        "t": 100,
+        "a": 18
+      },
+      "AIR EXPORT TONS": {
+        "t": 35,
+        "a": 2
+      },
+      "OVERLAND": {
+        "t": 82,
+        "a": 23
+      },
+      "WAREHOUSING JOBS": {
+        "t": 14,
+        "a": 0
+      },
+      "PROJECT/ BREAKBULK": {
+        "t": 1,
+        "a": 0
+      },
+      "SALES BLITZ": {
+        "t": null,
+        "a": 1
+      },
+      "100 DIAL": {
+        "t": null,
+        "a": null
+      },
+      "OUTDOOR EVENT": {
+        "t": null,
+        "a": null
+      }
+    }
+  },
+  "managersBlock2": {
+    "Sajeer": {
+      "NEW CUSTOMER": {
+        "t": 20,
+        "a": 4
+      },
+      "TOTAL JOBS": {
+        "t": 1200,
+        "a": 281
+      },
+      "TOTAL SALES": {
+        "t": 12000000,
+        "a": 2202401
+      },
+      "SALES COLLECTION": {
+        "t": 12000000,
+        "a": 2381579
+      },
+      "GP": {
+        "t": 1200000,
+        "a": 304843.7
+      },
+      "ENQUIRY": {
+        "t": 1000,
+        "a": 350
+      },
+      "IMPORT SEA JOBS": {
+        "t": 400,
+        "a": 42
+      },
+      "EXPORT SEA JOBS": {
+        "t": 240,
+        "a": 109
+      },
+      "IMPORT SEA CTNR": {
+        "t": 850,
+        "a": 81
+      },
+      "EXPORT SEA CTNR": {
+        "t": 400,
+        "a": 118
+      },
+      "AIR IMPORT JOBS": {
+        "t": 50,
+        "a": 6
+      },
+      "AIR EXPORT JOBS": {
+        "t": 200,
+        "a": 63
+      },
+      "AIR IMPORT TONS": {
+        "t": 20,
+        "a": 3
+      },
+      "AIR EXPORT TONS": {
+        "t": 75,
+        "a": 8.6
+      },
+      "OVERLAND": {
+        "t": 166,
+        "a": 61
+      },
+      "WAREHOUSING JOBS": {
+        "t": 5,
+        "a": 0
+      },
+      "PROJECT/ BREAKBULK": {
+        "t": 2,
+        "a": 0
+      },
+      "SALES BLITZ": {
+        "t": null,
+        "a": null
+      },
+      "100 DIAL": {
+        "t": null,
+        "a": null
+      },
+      "OUTDOOR EVENT": {
+        "t": null,
+        "a": null
+      }
+    },
+    "Akshai": {
+      "NEW CUSTOMER": {
+        "t": 25,
+        "a": 1
+      },
+      "TOTAL JOBS": {
+        "t": 500,
+        "a": 99
+      },
+      "TOTAL SALES": {
+        "t": 6000000,
+        "a": 1929445.13
+      },
+      "SALES COLLECTION": {
+        "t": 6000000,
+        "a": 1478352
+      },
+      "GP": {
+        "t": 600000,
+        "a": 276856.7
+      },
+      "ENQUIRY": {
+        "t": 1000,
+        "a": 300
+      },
+      "IMPORT SEA JOBS": {
+        "t": 300,
+        "a": 101
+      },
+      "EXPORT SEA JOBS": {
+        "t": 125,
+        "a": 10
+      },
+      "IMPORT SEA CTNR": {
+        "t": 600,
+        "a": 120
+      },
+      "EXPORT SEA CTNR": {
+        "t": 200,
+        "a": 10
+      },
+      "AIR IMPORT JOBS": {
+        "t": 50,
+        "a": 13
+      },
+      "AIR EXPORT JOBS": {
+        "t": 20,
+        "a": 0
+      },
+      "AIR IMPORT TONS": {
+        "t": 50,
+        "a": 30
+      },
+      "AIR EXPORT TONS": {
+        "t": 15,
+        "a": 0
+      },
+      "OVERLAND": {
+        "t": 17,
+        "a": 0
+      },
+      "WAREHOUSING JOBS": {
+        "t": 5,
+        "a": 0
+      },
+      "PROJECT/ BREAKBULK": {
+        "t": 1,
+        "a": 0
+      },
+      "SALES BLITZ": {
+        "t": null,
+        "a": null
+      },
+      "100 DIAL": {
+        "t": null,
+        "a": null
+      },
+      "OUTDOOR EVENT": {
+        "t": null,
+        "a": null
+      }
+    },
+    "Vishnu Muraly": {
+      "NEW CUSTOMER": {
+        "t": 45,
+        "a": 8
+      },
+      "TOTAL JOBS": {
+        "t": 400,
+        "a": 17
+      },
+      "TOTAL SALES": {
+        "t": 4100000,
+        "a": 457370
+      },
+      "SALES COLLECTION": {
+        "t": 4100000,
+        "a": 22455
+      },
+      "GP": {
+        "t": 412000,
+        "a": 44109.5
+      },
+      "ENQUIRY": {
+        "t": 1000,
+        "a": 8
+      },
+      "IMPORT SEA JOBS": {
+        "t": 150,
+        "a": 0
+      },
+      "EXPORT SEA JOBS": {
+        "t": 150,
+        "a": 0
+      },
+      "IMPORT SEA CTNR": {
+        "t": 350,
+        "a": 0
+      },
+      "EXPORT SEA CTNR": {
+        "t": 150,
+        "a": 0
+      },
+      "AIR IMPORT JOBS": {
+        "t": 50,
+        "a": 4
+      },
+      "AIR EXPORT JOBS": {
+        "t": 50,
+        "a": 1
+      },
+      "AIR IMPORT TONS": {
+        "t": 25,
+        "a": 1.625
+      },
+      "AIR EXPORT TONS": {
+        "t": 15,
+        "a": 20.5
+      },
+      "OVERLAND": {
+        "t": 17,
+        "a": 3
+      },
+      "WAREHOUSING JOBS": {
+        "t": 1,
+        "a": 0
+      },
+      "PROJECT/ BREAKBULK": {
+        "t": 2,
+        "a": 0
+      },
+      "SALES BLITZ": {
+        "t": null,
+        "a": null
+      },
+      "100 DIAL": {
+        "t": null,
+        "a": null
+      },
+      "OUTDOOR EVENT": {
+        "t": null,
+        "a": null
+      }
+    },
+    "Eric": {
+      "NEW CUSTOMER": {
+        "t": 35,
+        "a": 5
+      },
+      "TOTAL JOBS": {
+        "t": 200,
+        "a": 15
+      },
+      "TOTAL SALES": {
+        "t": 1700000,
+        "a": 163554.7
+      },
+      "SALES COLLECTION": {
+        "t": 1700000,
+        "a": 150081
+      },
+      "GP": {
+        "t": 168000,
+        "a": 16296.05
+      },
+      "ENQUIRY": {
+        "t": 800,
+        "a": 100
+      },
+      "IMPORT SEA JOBS": {
+        "t": 75,
+        "a": 10
+      },
+      "EXPORT SEA JOBS": {
+        "t": 50,
+        "a": 2
+      },
+      "IMPORT SEA CTNR": {
+        "t": 100,
+        "a": 9
+      },
+      "EXPORT SEA CTNR": {
+        "t": 50,
+        "a": 3
+      },
+      "AIR IMPORT JOBS": {
+        "t": 25,
+        "a": 1
+      },
+      "AIR EXPORT JOBS": {
+        "t": 25,
+        "a": 1
+      },
+      "AIR IMPORT TONS": {
+        "t": 15,
+        "a": 2.71
+      },
+      "AIR EXPORT TONS": {
+        "t": 10,
+        "a": 0.485
+      },
+      "OVERLAND": {
+        "t": 12,
+        "a": 0
+      },
+      "WAREHOUSING JOBS": {
+        "t": 1,
+        "a": 0
+      },
+      "PROJECT/ BREAKBULK": {
+        "t": 1,
+        "a": 0
+      },
+      "SALES BLITZ": {
+        "t": null,
+        "a": null
+      },
+      "100 DIAL": {
+        "t": null,
+        "a": null
+      },
+      "OUTDOOR EVENT": {
+        "t": null,
+        "a": null
+      }
+    }
+  }
+}
