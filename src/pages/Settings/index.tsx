@@ -4,13 +4,13 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   Plus,
   Search,
   Trash2,
   X,
   ChevronUp,
-  ChevronDown,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -28,7 +28,8 @@ import { toast } from "@/hooks/use-toast"
 import { useTenantKpiItems } from "@/hooks/useTenantScope"
 import { useAppStore } from "@/store/appStore"
 import { useKPIStore } from "@/store/kpiStore"
-import type { KPIItem } from "@/types/kpi.types"
+import { HIERARCHY_SEED } from "@/pages/TemplateAllocation/HierarchyTree"
+import type { HierarchyNode, KPIItem } from "@/types/kpi.types"
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] as const
 const CURRENCIES = ["USD", "AED", "INR", "GBP", "EUR", "SAR", "QAR", "KWD", "OMR", "BHD"] as const
@@ -36,6 +37,21 @@ const INDUSTRIES = ["Logistics", "Manufacturing", "Retail", "Financial", "Sales"
 const TIMEZONES = ["UTC", "Asia/Dubai", "Asia/Kolkata", "Europe/London", "Europe/Berlin", "Asia/Qatar", "Asia/Kuwait", "Asia/Bahrain"]
 
 type NotificationConfig = { id: string; label: string; email: boolean; inApp: boolean }
+
+type ResponsibleMember = { id: string; name: string }
+type ResponsibleTeam = { id: string; name: string; members: ResponsibleMember[] }
+
+function flattenNodes(nodes: HierarchyNode[]): HierarchyNode[] {
+  const out: HierarchyNode[] = []
+  const walk = (list: HierarchyNode[]) => {
+    for (const node of list) {
+      out.push(node)
+      walk(node.children)
+    }
+  }
+  walk(nodes)
+  return out
+}
 
 const STANDARD_LIBRARY: Record<string, Array<Pick<KPIItem, "definitionName" | "itemName" | "kpiCode" | "category" | "unitType">>> = {
   Logistics: [
@@ -57,6 +73,8 @@ export default function SettingsPage() {
   const addKPIItem = useKPIStore((s) => s.addKPIItem)
   const hierarchyLevels = useAppStore((s) => s.hierarchyLevels)
   const setHierarchyLevels = useAppStore((s) => s.setHierarchyLevels)
+  const responsibleOwnersByTeamId = useAppStore((s) => s.responsibleOwnersByTeamId)
+  const setResponsibleOwnersByTeamId = useAppStore((s) => s.setResponsibleOwnersByTeamId)
   const activityLog = useAppStore((s) => s.activityLog)
   const notifications = useAppStore((s) => s.notifications)
 
@@ -83,6 +101,56 @@ export default function SettingsPage() {
   const [frequency, setFrequency] = useState("immediate")
   const [activityAction, setActivityAction] = useState("all")
   const [dateRange, setDateRange] = useState("30")
+  const [draftResponsibleOwnersByTeamId, setDraftResponsibleOwnersByTeamId] = useState<Record<string, string[]>>(responsibleOwnersByTeamId)
+  const [responsibleTableSearch, setResponsibleTableSearch] = useState("")
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false)
+  const [activeTeamId, setActiveTeamId] = useState<string>("")
+  const [availableSearch, setAvailableSearch] = useState("")
+  const [assignedSearch, setAssignedSearch] = useState("")
+  const [pendingAssignedIds, setPendingAssignedIds] = useState<Set<string>>(new Set())
+
+  const responsibleTeams = useMemo<ResponsibleTeam[]>(() => {
+    const all = flattenNodes(HIERARCHY_SEED)
+    return all
+      .filter((n) => n.role === "sales-lead")
+      .map((lead) => ({
+        id: lead.id,
+        name: lead.name,
+        members: all
+          .filter((n) => n.parentId === lead.id && n.role === "sales-executive")
+          .map((n) => ({ id: n.id, name: n.name })),
+      }))
+  }, [])
+
+  const filteredResponsibleTeams = useMemo(() => {
+    const q = responsibleTableSearch.trim().toLowerCase()
+    if (!q) return responsibleTeams
+    return responsibleTeams.filter((team) => team.name.toLowerCase().includes(q))
+  }, [responsibleTableSearch, responsibleTeams])
+
+  const allResponsibleMembers = useMemo(
+    () => responsibleTeams.flatMap((team) => team.members),
+    [responsibleTeams],
+  )
+
+  const activeTeam = useMemo(
+    () => responsibleTeams.find((team) => team.id === activeTeamId) ?? null,
+    [activeTeamId, responsibleTeams],
+  )
+
+  const availableMembers = useMemo(() => {
+    const q = availableSearch.trim().toLowerCase()
+    return allResponsibleMembers
+      .filter((member) => !pendingAssignedIds.has(member.id))
+      .filter((member) => (q ? member.name.toLowerCase().includes(q) : true))
+  }, [allResponsibleMembers, availableSearch, pendingAssignedIds])
+
+  const assignedMembers = useMemo(() => {
+    const q = assignedSearch.trim().toLowerCase()
+    return allResponsibleMembers
+      .filter((member) => pendingAssignedIds.has(member.id))
+      .filter((member) => (q ? member.name.toLowerCase().includes(q) : true))
+  }, [allResponsibleMembers, assignedSearch, pendingAssignedIds])
 
   const filteredKpis = useMemo(() => {
     const q = query.toLowerCase().trim()
@@ -170,6 +238,7 @@ export default function SettingsPage() {
           <TabsTrigger value="library">KPI Library</TabsTrigger>
           <TabsTrigger value="calendar">Fiscal Calendar</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
+          <TabsTrigger value="responsible-owners">Responsible Owners</TabsTrigger>
           <TabsTrigger value="users">Users &amp; Roles</TabsTrigger>
           <TabsTrigger value="activity">Activity Log</TabsTrigger>
         </TabsList>
@@ -291,6 +360,174 @@ export default function SettingsPage() {
               <div className="max-w-[240px]"><Label>Frequency</Label><Select value={frequency} onValueChange={setFrequency}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="immediate">Immediate</SelectItem><SelectItem value="daily">Daily Digest</SelectItem><SelectItem value="weekly">Weekly Summary</SelectItem></SelectContent></Select></div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="responsible-owners">
+          <Card>
+            <CardHeader>
+              <CardTitle>Responsible Owners Mapping</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Map one team to one or more responsible persons. This mapping drives visibility in Responsible Person Targets.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative min-w-[280px] flex-1">
+                  <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="pl-9"
+                    value={responsibleTableSearch}
+                    onChange={(e) => setResponsibleTableSearch(e.target.value)}
+                    placeholder="Search team..."
+                  />
+                </div>
+              </div>
+              <div className="rounded-md border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>S.No.</TableHead>
+                      <TableHead>Team</TableHead>
+                      <TableHead>Total Members</TableHead>
+                      <TableHead>Allocated Count</TableHead>
+                      <TableHead>Assigned Persons</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredResponsibleTeams.map((team, index) => {
+                      const assignedIds = draftResponsibleOwnersByTeamId[team.id] ?? []
+                      const assignedNames = allResponsibleMembers
+                        .filter((m) => assignedIds.includes(m.id))
+                        .map((m) => m.name)
+                      return (
+                        <TableRow key={team.id}>
+                          <TableCell>{index + 1}</TableCell>
+                          <TableCell className="font-medium">{team.name}</TableCell>
+                          <TableCell>{team.members.length}</TableCell>
+                          <TableCell>{assignedIds.length}</TableCell>
+                          <TableCell className="max-w-[340px]">
+                            {assignedNames.length === 0 ? (
+                              <span className="text-muted-foreground text-sm">No assigned persons</span>
+                            ) : (
+                              <div className="flex flex-wrap gap-1">
+                                {assignedNames.slice(0, 4).map((name) => (
+                                  <Badge key={`${team.id}-${name}`} variant="outline">{name}</Badge>
+                                ))}
+                                {assignedNames.length > 4 ? <Badge variant="outline">+{assignedNames.length - 4}</Badge> : null}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => {
+                                setActiveTeamId(team.id)
+                                setPendingAssignedIds(new Set(assignedIds))
+                                setAvailableSearch("")
+                                setAssignedSearch("")
+                                setAssignDialogOpen(true)
+                              }}
+                            >
+                              Assign Users
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                    {filteredResponsibleTeams.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                          No teams found.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+          <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
+            <DialogContent className="max-w-[1000px]">
+              <DialogHeader>
+                <DialogTitle>Assign Users</DialogTitle>
+              </DialogHeader>
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_80px_1fr] gap-4">
+                <div className="rounded-md border p-3 space-y-2">
+                  <div className="text-sm font-semibold">Available Users ({availableMembers.length})</div>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input className="pl-9" placeholder="Search" value={availableSearch} onChange={(e) => setAvailableSearch(e.target.value)} />
+                  </div>
+                  <div className="max-h-[420px] overflow-auto space-y-1 border rounded-md p-2">
+                    {availableMembers.map((member) => (
+                      <div key={`avail-${member.id}`} className="flex items-center justify-between rounded-md border px-2 py-2 text-sm">
+                        <span>{member.name}</span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setPendingAssignedIds((prev) => new Set([...prev, member.id]))}
+                        >
+                          +
+                        </Button>
+                      </div>
+                    ))}
+                    {availableMembers.length === 0 ? <p className="text-xs text-muted-foreground p-2">No available users.</p> : null}
+                  </div>
+                </div>
+                <div className="hidden md:flex items-center justify-center text-muted-foreground">↔</div>
+                <div className="rounded-md border p-3 space-y-2">
+                  <div className="text-sm font-semibold">Assigned Users ({assignedMembers.length})</div>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input className="pl-9" placeholder="Search" value={assignedSearch} onChange={(e) => setAssignedSearch(e.target.value)} />
+                  </div>
+                  <div className="max-h-[420px] overflow-auto space-y-1 border rounded-md p-2">
+                    {assignedMembers.map((member) => (
+                      <div key={`assigned-${member.id}`} className="flex items-center justify-between rounded-md border px-2 py-2 text-sm">
+                        <span>{member.name}</span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            setPendingAssignedIds((prev) => {
+                              const next = new Set(prev)
+                              next.delete(member.id)
+                              return next
+                            })
+                          }
+                        >
+                          -
+                        </Button>
+                      </div>
+                    ))}
+                    {assignedMembers.length === 0 ? <p className="text-xs text-muted-foreground p-2">No assigned users.</p> : null}
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setAssignDialogOpen(false)}>Close</Button>
+                <Button
+                  onClick={() => {
+                    if (!activeTeamId) return
+                    const nextMapping = {
+                      ...draftResponsibleOwnersByTeamId,
+                      [activeTeamId]: [...pendingAssignedIds],
+                    }
+                    setDraftResponsibleOwnersByTeamId(nextMapping)
+                    setResponsibleOwnersByTeamId(nextMapping)
+                    setAssignDialogOpen(false)
+                    toast({ title: "Assigned list updated", description: `${activeTeam?.name ?? "Team"} mapping updated.` })
+                  }}
+                >
+                  Assign
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         <TabsContent value="users">

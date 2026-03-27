@@ -392,7 +392,7 @@ export default function ActualsVsTargetPage() {
   return (
     <div className="space-y-4 bg-slate-50 min-h-full">
       <div className="px-6 pt-6">
-        <h2 className="text-2xl font-semibold tracking-tight text-brand-blue">Actuals vs Target</h2>
+        <h2 className="text-2xl font-semibold tracking-tight text-brand-blue">Dashboard</h2>
         <p className="mt-1 text-sm text-muted-foreground">Track performance by employee, KPI, and hierarchy</p>
       </div>
       <FilterBar
@@ -482,6 +482,7 @@ export default function ActualsVsTargetPage() {
       />
       <div className="px-6 pb-6">
         <SummaryCards rows={visibleRows} animateKey={`${period}-${role}-${category}-${viewLevel}-${dateFrom}-${dateTo}`} />
+        <PerformanceCharts rows={visibleRows} />
         <PerformanceTable
           rows={editableRows}
           period={period}
@@ -505,7 +506,6 @@ export default function ActualsVsTargetPage() {
             setSelectedEntry(null)
           }}
         />
-        <PerformanceCharts rows={visibleRows} />
       </div>
       <DrillDownDrawer
         open={Boolean(selectedEntry)}

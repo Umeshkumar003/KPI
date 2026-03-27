@@ -37,6 +37,8 @@ export type HierarchyLevelConfig = {
   color: string
 }
 
+export type ResponsibleOwnersMap = Record<string, string[]>
+
 const TENANT_KEY = "kpi-current-tenant-id"
 
 const readInitialTenantId = (): string => {
@@ -54,6 +56,7 @@ type AppState = {
   notifications: AppNotification[]
   activityLog: ActivityLogEntry[]
   hierarchyLevels: HierarchyLevelConfig[]
+  responsibleOwnersByTeamId: ResponsibleOwnersMap
   setFiscalYear: (fy: string) => void
   setCurrentTenantId: (tenantId: string) => void
   setTheme: (theme: AppTheme) => void
@@ -63,6 +66,7 @@ type AppState = {
   markAllNotificationsRead: () => void
   pushActivity: (entry: Omit<ActivityLogEntry, "id" | "timestamp" | "userId">) => void
   setHierarchyLevels: (levels: HierarchyLevelConfig[]) => void
+  setResponsibleOwnersByTeamId: (mapping: ResponsibleOwnersMap) => void
   importKPIItems: (items: KPIItem[]) => void
 }
 
@@ -90,6 +94,11 @@ const DEFAULT_LEVELS: HierarchyLevelConfig[] = [
   { id: "hl-6", name: "Executive", orgType: "Individual", color: "#475569" },
 ]
 
+const DEFAULT_RESPONSIBLE_OWNERS_BY_TEAM_ID: ResponsibleOwnersMap = {
+  "sl-import": ["se-akshai", "se-priya"],
+  "sl-export": ["se-ravi"],
+}
+
 const readInitialTheme = (): AppTheme => {
   const stored = localStorage.getItem(THEME_KEY)
   if (stored === "dark" || stored === "light") return stored
@@ -104,6 +113,7 @@ export const useAppStore = create<AppState>((set) => ({
   notifications: DEFAULT_NOTIFICATIONS,
   activityLog: [],
   hierarchyLevels: DEFAULT_LEVELS,
+  responsibleOwnersByTeamId: DEFAULT_RESPONSIBLE_OWNERS_BY_TEAM_ID,
   setFiscalYear: (fy) => set(() => ({ fiscalYear: fy })),
   setCurrentTenantId: (tenantId) =>
     set(() => {
@@ -146,5 +156,6 @@ export const useAppStore = create<AppState>((set) => ({
       ].slice(0, 50),
     })),
   setHierarchyLevels: (levels) => set(() => ({ hierarchyLevels: levels })),
+  setResponsibleOwnersByTeamId: (mapping) => set(() => ({ responsibleOwnersByTeamId: mapping })),
   importKPIItems: () => undefined,
 }))

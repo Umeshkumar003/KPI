@@ -9,6 +9,7 @@ const TemplateForm = lazy(() => import("@/pages/KPITemplates/TemplateForm"))
 const TemplateAllocationPage = lazy(() => import("@/pages/TemplateAllocation"))
 const PeriodTrackerPage = lazy(() => import("@/pages/PeriodTracker"))
 const ActualsVsTargetPage = lazy(() => import("@/pages/ActualsVsTarget"))
+const ResponsibleTargetsPage = lazy(() => import("@/pages/ResponsibleTargets"))
 const SettingsPage = lazy(() => import("@/pages/Settings"))
 
 export const router = createBrowserRouter([
@@ -24,6 +25,7 @@ export const router = createBrowserRouter([
       { path: "template-allocation", element: <TemplateAllocationPage /> },
       { path: "period-tracker", element: <PeriodTrackerPage /> },
       { path: "actuals-vs-target", element: <ActualsVsTargetPage /> },
+      { path: "responsible-targets", element: <ResponsibleTargetsPage /> },
       { path: "settings", element: <SettingsPage /> },
     ],
   },

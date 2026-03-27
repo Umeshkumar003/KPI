@@ -149,38 +149,55 @@ export default function PerformanceCharts({ rows }: Props) {
         </Card>
       </div>
 
+      <Card className="bg-white">
+        <CardHeader>
+          <CardTitle className="text-base">Attainment Heatmap</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-auto">
+            <div className="grid gap-1" style={{ gridTemplateColumns: `180px repeat(${employees.length}, minmax(90px, 1fr))` }}>
+              <div className="font-medium text-sm p-2">KPI / Employee</div>
+              {employees.map((name) => <div key={name} className="text-xs font-medium p-2">{name}</div>)}
+              {heatmapRows.map((row) => (
+                <div key={row.kpi} className="contents">
+                  <div key={`${row.kpi}-name`} className="text-xs p-2 font-medium">{row.kpi}</div>
+                  {row.cells.map((cell, idx) => {
+                    const value = cell?.attainmentPct ?? 0
+                    const bg = value >= 100 ? "bg-green-200" : value >= 85 ? "bg-amber-200" : "bg-red-200"
+                    return (
+                      <div
+                        key={`${row.kpi}-${employees[idx]}`}
+                        title={`${employees[idx]} | ${row.kpi} | ${value.toFixed(1)}%`}
+                        className={`h-12 rounded text-xs font-semibold flex items-center justify-center ${bg}`}
+                      >
+                        {value.toFixed(0)}%
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <Card className="bg-white">
-          <CardHeader>
-            <CardTitle className="text-base">Attainment Heatmap</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-auto">
-              <div className="grid gap-1" style={{ gridTemplateColumns: `180px repeat(${employees.length}, minmax(90px, 1fr))` }}>
-                <div className="font-medium text-sm p-2">KPI / Employee</div>
-                {employees.map((name) => <div key={name} className="text-xs font-medium p-2">{name}</div>)}
-                {heatmapRows.map((row) => (
-                  <div key={row.kpi} className="contents">
-                    <div key={`${row.kpi}-name`} className="text-xs p-2 font-medium">{row.kpi}</div>
-                    {row.cells.map((cell, idx) => {
-                      const value = cell?.attainmentPct ?? 0
-                      const bg = value >= 100 ? "bg-green-200" : value >= 85 ? "bg-amber-200" : "bg-red-200"
-                      return (
-                        <div
-                          key={`${row.kpi}-${employees[idx]}`}
-                          title={`${employees[idx]} | ${row.kpi} | ${value.toFixed(1)}%`}
-                          className={`h-12 rounded text-xs font-semibold flex items-center justify-center ${bg}`}
-                        >
-                          {value.toFixed(0)}%
-                        </div>
-                      )
-                    })}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-base">Top Performers - FY 2025-26 YTD</CardTitle>
+          <div className="inline-flex rounded-md border p-0.5">
+            <Button size="sm" variant={leaderboardMode === "top" ? "secondary" : "ghost"} onClick={() => setLeaderboardMode("top")}>
+              Top Performers
+            </Button>
+            <Button size="sm" variant={leaderboardMode === "bottom" ? "secondary" : "ghost"} onClick={() => setLeaderboardMode("bottom")}>
+              Needs Attention
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {leaderboard.map((person, index) => <LeaderboardItem key={person.name} person={person} index={index} mode={leaderboardMode} />)}
+        </CardContent>
+      </Card>
 
         <Card className="bg-white">
           <CardHeader>
@@ -202,23 +219,6 @@ export default function PerformanceCharts({ rows }: Props) {
           </CardContent>
         </Card>
       </div>
-
-      <Card className="bg-white">
-        <CardHeader className="flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-base">Top Performers - FY 2025-26 YTD</CardTitle>
-          <div className="inline-flex rounded-md border p-0.5">
-            <Button size="sm" variant={leaderboardMode === "top" ? "secondary" : "ghost"} onClick={() => setLeaderboardMode("top")}>
-              Top Performers
-            </Button>
-            <Button size="sm" variant={leaderboardMode === "bottom" ? "secondary" : "ghost"} onClick={() => setLeaderboardMode("bottom")}>
-              Needs Attention
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {leaderboard.map((person, index) => <LeaderboardItem key={person.name} person={person} index={index} mode={leaderboardMode} />)}
-        </CardContent>
-      </Card>
     </div>
   )
 }

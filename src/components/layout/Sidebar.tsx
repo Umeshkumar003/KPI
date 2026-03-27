@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { BarChart2, CalendarClock, ChevronLeft, ChevronRight, FileText, Layers, Settings, Users } from "lucide-react"
+import { BarChart2, CalendarClock, ChevronLeft, ChevronRight, FileText, Layers, Settings, Target, Users } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -59,6 +59,13 @@ export function Sidebar() {
 
   const performanceItems: NavItem[] = [
     {
+      label: "Dashboard",
+      href: "/actuals-vs-target",
+      icon: BarChart2,
+      altHint: "Alt+5",
+      isActive: (p) => p === "/actuals-vs-target",
+    },
+    {
       label: "KPI Items",
       href: "/kpi-items",
       icon: FileText,
@@ -87,11 +94,11 @@ export function Sidebar() {
       isActive: (p) => p === "/period-tracker",
     },
     {
-      label: "Actuals vs Target",
-      href: "/actuals-vs-target",
-      icon: BarChart2,
-      altHint: "Alt+5",
-      isActive: (p) => p === "/actuals-vs-target",
+      label: "Responsible Targets",
+      href: "/responsible-targets",
+      icon: Target,
+      altHint: "Alt+6",
+      isActive: (p) => p === "/responsible-targets",
     },
   ]
 
@@ -132,6 +139,9 @@ export function Sidebar() {
       } else if (digit === "5") {
         event.preventDefault()
         navigate("/actuals-vs-target")
+      } else if (digit === "6") {
+        event.preventDefault()
+        navigate("/responsible-targets")
       }
     }
 

@@ -90,7 +90,7 @@ function unitLabelForUnitType(unitType: KPITarget["unitType"]): string {
     case "percentage":
       return "%"
     case "currency":
-      return "USD"
+      return "Amount"
     case "teu":
       return "TEU"
     case "score":
@@ -100,7 +100,7 @@ function unitLabelForUnitType(unitType: KPITarget["unitType"]): string {
     case "hours":
       return "hrs"
     case "number":
-      return "#"
+      return "Number"
     case "cbm":
       return "CBM"
     case "tonnes":

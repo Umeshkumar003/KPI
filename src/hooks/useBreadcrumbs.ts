@@ -20,7 +20,8 @@ export function useBreadcrumbs() {
     if (pathname === "/kpi-templates") return [{ label: "Performance" }, { label: "KPI Templates" }] as Crumb[]
     if (pathname === "/kpi-templates/new") return [{ label: "Performance" }, { label: "KPI Templates", href: "/kpi-templates" }, { label: "New Template" }] as Crumb[]
     if (pathname === "/template-allocation") return [{ label: "Performance" }, { label: "Template Allocation" }] as Crumb[]
-    if (pathname === "/actuals-vs-target") return [{ label: "Performance" }, { label: "Actuals vs Target" }] as Crumb[]
+    if (pathname === "/actuals-vs-target") return [{ label: "Performance" }, { label: "Dashboard" }] as Crumb[]
+    if (pathname === "/responsible-targets") return [{ label: "Performance" }, { label: "Responsible Targets" }] as Crumb[]
     if (pathname === "/settings") return [{ label: "Settings" }] as Crumb[]
     return [{ label: "Performance" }] as Crumb[]
   }, [kpiItems, params.id, pathname])

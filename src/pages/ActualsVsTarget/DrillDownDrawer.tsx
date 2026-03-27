@@ -83,7 +83,7 @@ export default function DrillDownDrawer({ entry, open, onClose, allEntries }: Pr
 
   return (
     <Sheet open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <SheetContent side="right" className="w-[400px] overflow-y-auto bg-white">
+      <SheetContent side="right" className="w-[60vw] max-w-none sm:max-w-[60vw] overflow-y-auto bg-white">
         {entry ? (
           <div className="space-y-4">
             <SheetHeader>

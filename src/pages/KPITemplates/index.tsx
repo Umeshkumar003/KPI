@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
-import { Copy, Pencil, Trash2, Layers } from "lucide-react"
+import { Copy, Trash2, Layers, LayoutGrid, List } from "lucide-react"
 
 import { toast } from "@/hooks/use-toast"
 import { useTenantKpiTemplates } from "@/hooks/useTenantScope"
@@ -97,6 +97,7 @@ export default function KPITemplatesPage() {
   const [compareIds, setCompareIds] = useState<string[]>([])
   const [compareOpen, setCompareOpen] = useState(false)
   const [changelogTemplate, setChangelogTemplate] = useState<KPITemplate | null>(null)
+  const [viewMode, setViewMode] = useState<"grid" | "list">("list")
 
   const [loading, setLoading] = useState(true)
   useEffect(() => {
@@ -223,6 +224,30 @@ export default function KPITemplatesPage() {
             {category === "all" ? "All" : category.charAt(0).toUpperCase() + category.slice(1)} ({categoryCounts[category] ?? 0})
           </Button>
         ))}
+        <div className="ml-auto inline-flex items-center rounded-md border bg-white p-0.5">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className={cn("h-8 px-2", viewMode === "grid" ? "bg-slate-100 text-slate-900" : "text-slate-600")}
+            onClick={() => setViewMode("grid")}
+            aria-label="Grid view"
+            title="Grid view"
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className={cn("h-8 px-2", viewMode === "list" ? "bg-slate-100 text-slate-900" : "text-slate-600")}
+            onClick={() => setViewMode("list")}
+            aria-label="List view"
+            title="List view"
+          >
+            <List className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
       {compareIds.length === 2 ? (
         <div className="flex justify-end">
@@ -261,7 +286,7 @@ export default function KPITemplatesPage() {
             action={{ label: "New Template", onClick: () => navigate("/kpi-templates/new") }}
           />
         )
-      ) : (
+      ) : viewMode === "grid" ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {cardData.map((t) => {
             const weightTotal = t.kpiItems.reduce((sum, it) => sum + it.weight, 0)
@@ -280,7 +305,11 @@ export default function KPITemplatesPage() {
                   : "border-slate-200 bg-slate-100 text-slate-500"
 
             return (
-              <Card key={t.id} className="transition-shadow duration-150 hover:shadow-md">
+              <Card
+                key={t.id}
+                className="cursor-pointer transition-shadow duration-150 hover:shadow-md"
+                onClick={() => navigate(`/kpi-templates/new?edit=${t.id}`)}
+              >
                 <CardHeader>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -300,7 +329,10 @@ export default function KPITemplatesPage() {
                         <button
                           type="button"
                           className="text-xs text-brand-blue underline underline-offset-2"
-                          onClick={() => setChangelogTemplate(t)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setChangelogTemplate(t)
+                          }}
                         >
                           View changelog
                         </button>
@@ -367,10 +399,7 @@ export default function KPITemplatesPage() {
                 <CardFooter className="flex flex-col gap-2">
                   <div className="flex w-full items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <Button variant="outline" size="icon" aria-label="Edit" onClick={() => navigate(`/kpi-templates/new?edit=${t.id}`)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button variant="outline" size="icon" aria-label="Duplicate" onClick={() => duplicateTemplate(t)}>
+                      <Button variant="outline" size="icon" aria-label="Duplicate" onClick={(e) => { e.stopPropagation(); duplicateTemplate(t) }}>
                         <Copy className="h-4 w-4" />
                       </Button>
                       <Button
@@ -378,7 +407,7 @@ export default function KPITemplatesPage() {
                         size="icon"
                         aria-label="Delete"
                         className="border-red-200 text-red-700 hover:bg-red-50"
-                        onClick={() => onRequestDelete(t.id)}
+                        onClick={(e) => { e.stopPropagation(); onRequestDelete(t.id) }}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -386,6 +415,7 @@ export default function KPITemplatesPage() {
                     <label className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Checkbox
                         checked={compareIds.includes(t.id)}
+                        onClick={(e) => e.stopPropagation()}
                         onCheckedChange={(checked) => {
                           setCompareIds((prev) => {
                             if (checked) {
@@ -400,7 +430,7 @@ export default function KPITemplatesPage() {
                       Compare
                     </label>
                   </div>
-                  <Button onClick={() => navigate("/template-allocation")}>
+                  <Button onClick={(e) => { e.stopPropagation(); navigate("/template-allocation") }}>
                     Allocate →
                   </Button>
                 </CardFooter>
@@ -408,6 +438,82 @@ export default function KPITemplatesPage() {
             )
           })}
         </div>
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Template</TableHead>
+                    <TableHead>Code</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Period</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>KPI Items</TableHead>
+                    <TableHead>Weight</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {cardData.map((t) => {
+                    const weightTotal = t.kpiItems.reduce((sum, it) => sum + it.weight, 0)
+                    const statusClass =
+                      t.statusId === "active"
+                        ? "border-brand-blue/30 bg-orange-50 text-brand-blue"
+                        : t.statusId === "draft"
+                          ? "border-slate-200 bg-slate-50 text-slate-700"
+                          : "border-slate-200 bg-slate-100 text-slate-500"
+                    return (
+                      <TableRow
+                        key={`list-${t.id}`}
+                        className="cursor-pointer"
+                        onClick={() => navigate(`/kpi-templates/new?edit=${t.id}`)}
+                      >
+                        <TableCell className="font-medium">{t.templateName}</TableCell>
+                        <TableCell>
+                          <span className="font-mono text-xs bg-slate-100 text-muted-foreground px-1.5 py-0.5 rounded">
+                            {t.templateCode}
+                          </span>
+                        </TableCell>
+                        <TableCell>{t.category}</TableCell>
+                        <TableCell>{periodLabel(t.periodType)}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={cn("border-0", statusClass)}>
+                            {statusLabels[t.statusId]}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{t.kpiItems.length}</TableCell>
+                        <TableCell className={cn("font-mono", weightBadgeClass(weightTotal))}>{weightTotal}%</TableCell>
+                        <TableCell className="text-right">
+                          <div className="inline-flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              aria-label="Duplicate"
+                              onClick={(e) => { e.stopPropagation(); duplicateTemplate(t) }}
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              aria-label="Delete"
+                              className="border-red-200 text-red-700 hover:bg-red-50"
+                              onClick={(e) => { e.stopPropagation(); onRequestDelete(t.id) }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
       )}
       </>
       ) : null}

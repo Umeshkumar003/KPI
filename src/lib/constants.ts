@@ -5,7 +5,7 @@ export const NAV_ITEMS = [
   { label: "KPI Items", href: "/kpi-items" },
   { label: "KPI Templates", href: "/kpi-templates" },
   { label: "Template Allocation", href: "/template-allocation" },
-  { label: "Actuals vs Target", href: "/actuals-vs-target" },
+  { label: "Dashboard", href: "/actuals-vs-target" },
 ]
 
 const SAMPLE_KPI_ITEMS_BASE = [

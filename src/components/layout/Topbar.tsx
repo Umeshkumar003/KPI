@@ -20,7 +20,7 @@ import {
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -37,7 +37,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
-import { Badge } from "@/components/ui/badge"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useTenantActuals, useTenantKpiItems, useTenantKpiTemplates } from "@/hooks/useTenantScope"
@@ -47,6 +46,31 @@ import { useAppStore } from "@/store/appStore"
 import type { ActualEntry, KPIItem, KPITemplate } from "@/types/kpi.types"
 
 export type TopbarBreadcrumb = { label: string; href?: string }
+
+const ROUTE_LABELS: Record<string, string> = {
+  "/": "KPI Items",
+  "/kpi-items": "KPI Items",
+  "/kpi-items/new": "New KPI item",
+  "/kpi-templates": "KPI templates",
+  "/kpi-templates/new": "New template",
+  "/template-allocation": "Template allocation",
+  "/period-tracker": "Period tracker",
+  "/actuals-vs-target": "Dashboard",
+  "/responsible-targets": "Responsible targets",
+  "/settings": "Settings",
+}
+
+function formatRouteLabel(route: string): string {
+  return ROUTE_LABELS[route] ?? route.replace(/^\//, "").replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function Kbd({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="pointer-events-none inline-flex h-5 min-w-[1.25rem] select-none items-center justify-center rounded border border-border/80 bg-muted/80 px-1.5 font-mono text-[10px] font-medium text-muted-foreground shadow-sm">
+      {children}
+    </kbd>
+  )
+}
 
 export function Topbar({
   title,
@@ -91,6 +115,11 @@ export function Topbar({
   const [searchOpen, setSearchOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [paletteModKey, setPaletteModKey] = useState("Ctrl")
+
+  useEffect(() => {
+    setPaletteModKey(typeof navigator !== "undefined" && /Mac|iPhone|iPod|iPad/i.test(navigator.platform) ? "⌘" : "Ctrl")
+  }, [])
 
   const employees = useMemo(() => {
     const map = new Map<string, ActualEntry>()
@@ -123,7 +152,7 @@ export function Topbar({
           key: "recent",
           label: "Recently Visited",
           icon: <History className="h-4 w-4" />,
-          items: recentPages.map((route) => ({ kind: "recent", label: route, route, hint: "Enter" })),
+          items: recentPages.map((route) => ({ kind: "recent", label: formatRouteLabel(route), route, hint: "Enter" })),
         },
       ]
     }
@@ -157,7 +186,9 @@ export function Topbar({
       key: "recent",
       label: "Recently Visited",
       icon: <History className="h-4 w-4" />,
-      items: recentPages.filter((route) => route.toLowerCase().includes(q)).map((route) => ({ kind: "recent", label: route, route, hint: "Enter" })),
+      items: recentPages
+        .filter((route) => `${formatRouteLabel(route)} ${route}`.toLowerCase().includes(q))
+        .map((route) => ({ kind: "recent", label: formatRouteLabel(route), route, hint: "Enter" })),
     }]
     if (actionMatches.length) {
       groups.push({
@@ -196,6 +227,11 @@ export function Topbar({
 
     return groups
   }, [employees, fiscalYear, kpiItems, recentPages, searchQuery, templates])
+
+  const visibleSearchGroups = useMemo(
+    () => searchGroups.filter((g) => g.items.length > 0),
+    [searchGroups],
+  )
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -282,6 +318,25 @@ export function Topbar({
       <div className="flex items-center gap-3">
         <Button type="button" variant="ghost" size="icon" aria-label="Open menu" className="md:hidden" onClick={() => window.dispatchEvent(new CustomEvent("open-mobile-sidebar"))}>
           <Menu className="h-5 w-5" />
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="hidden h-9 shrink-0 gap-2 border-border/70 bg-background/90 px-3 text-muted-foreground shadow-sm hover:bg-accent hover:text-accent-foreground sm:inline-flex"
+          onClick={() => {
+            setSearchOpen(true)
+            setSearchQuery("")
+          }}
+          aria-label="Open command palette"
+        >
+          <Search className="h-4 w-4 shrink-0 opacity-80" />
+          <span className="hidden max-w-[7rem] truncate font-normal md:inline">Search…</span>
+          <span className="hidden items-center gap-1 md:flex" aria-hidden>
+            <Kbd>{paletteModKey}</Kbd>
+            <span className="text-muted-foreground/70">+</span>
+            <Kbd>K</Kbd>
+          </span>
         </Button>
         <div className="w-[190px]">
           <Select value={fyValue} onValueChange={(value) => { setFyValue(value); setFiscalYear(fyOptions.find((x) => x.value === value)?.label ?? fiscalYear) }}>
@@ -384,79 +439,103 @@ export function Topbar({
       </Sheet>
 
       <Dialog open={searchOpen} onOpenChange={setSearchOpen}>
-        <DialogContent className="p-0 overflow-hidden">
-          <div className="border-b p-4">
+        <DialogContent className="gap-0 overflow-hidden border-border/60 p-0 shadow-2xl sm:max-w-[560px]">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Command palette</DialogTitle>
+            <DialogDescription>Search pages, KPI records, and run quick actions.</DialogDescription>
+          </DialogHeader>
+          <div className="border-b border-border/60 bg-muted/25 px-4 pb-4 pt-3">
+            <p className="mb-3 text-sm font-semibold tracking-tight text-foreground">Go anywhere</p>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 autoFocus
-                className="pl-9"
-                placeholder="Search KPI items, templates, employees..."
+                className="h-11 border-border/80 bg-background pl-10 pr-3 text-base shadow-sm placeholder:text-muted-foreground/70 focus-visible:ring-2"
+                placeholder="KPI items, templates, people, actions…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                aria-describedby="command-palette-hint"
               />
             </div>
-            <div className="mt-2 text-xs text-muted-foreground">Search pages, records, and quick actions.</div>
+            <p id="command-palette-hint" className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              Search pages you have visited, jump to KPIs and templates, or run quick actions when you type a match.
+            </p>
           </div>
 
-          <div className="max-h-[60vh] overflow-auto p-2">
-            {!searchGroups.length ? (
-              <div className="p-4 text-sm text-muted-foreground">
-                {searchQuery.trim() ? "No results found." : "Type to search... (Cmd+K)"}
+          <div className="max-h-[min(60vh,420px)] overflow-auto p-2">
+            {!visibleSearchGroups.length ? (
+              <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-4 py-8 text-center">
+                <p className="text-sm font-medium text-foreground">
+                  {searchQuery.trim() ? "No matches" : "Nothing here yet"}
+                </p>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {searchQuery.trim()
+                    ? "Try another term or check spelling."
+                    : "Visit a few pages to see them under Recently visited, or type to search KPIs and templates."}
+                </p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {searchGroups.map((group) => (
+              <div className="space-y-4">
+                {visibleSearchGroups.map((group) => (
                   <div key={group.key} className="space-y-1">
-                    <div className="flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <div className="flex items-center gap-2 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                       {group.icon}
                       {group.label}
                     </div>
-                    <div className="space-y-1">
+                    <div className="space-y-0.5">
                       {group.items.map((item, idx) => {
                         const key = `${group.key}-${idx}`
+                        const rowClass =
+                          "flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2.5 text-left transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         if (item.kind === "recent") {
-                          return <button key={key} type="button" className="w-full rounded-md px-2 py-2 text-left hover:bg-slate-50 flex items-center justify-between" onClick={() => onSelectSearchItem(item)}><div className="text-sm font-medium">{item.label}</div><Badge variant="outline">{item.hint}</Badge></button>
+                          return (
+                            <button key={key} type="button" className={rowClass} onClick={() => onSelectSearchItem(item)}>
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-medium">{item.label}</div>
+                                <div className="truncate font-mono text-[11px] text-muted-foreground">{item.route}</div>
+                              </div>
+                              <Kbd>{item.hint}</Kbd>
+                            </button>
+                          )
                         }
                         if (item.kind === "action") {
-                          return <button key={key} type="button" className="w-full rounded-md px-2 py-2 text-left hover:bg-slate-50 flex items-center justify-between" onClick={() => onSelectSearchItem(item)}><div className="text-sm font-medium">{item.label}</div><Badge variant="outline">{item.hint}</Badge></button>
+                          return (
+                            <button key={key} type="button" className={rowClass} onClick={() => onSelectSearchItem(item)}>
+                              <div className="text-sm font-medium">{item.label}</div>
+                              <Kbd>{item.hint}</Kbd>
+                            </button>
+                          )
                         }
                         if (item.kind === "items") {
                           return (
-                            <button
-                              key={key}
-                              type="button"
-                              className="w-full rounded-md px-2 py-2 text-left hover:bg-slate-50 flex items-center justify-between"
-                              onClick={() => onSelectSearchItem(item)}
-                            >
-                              <div><div className="text-sm font-medium">{item.kpi.kpiCode}</div><div className="text-xs text-muted-foreground">{item.kpi.itemName}</div></div>
-                              <Badge variant="outline">Enter</Badge>
+                            <button key={key} type="button" className={rowClass} onClick={() => onSelectSearchItem(item)}>
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-medium">{item.kpi.kpiCode}</div>
+                                <div className="truncate text-xs text-muted-foreground">{item.kpi.itemName}</div>
+                              </div>
+                              <Kbd>Enter</Kbd>
                             </button>
                           )
                         }
                         if (item.kind === "templates") {
                           return (
-                            <button
-                              key={key}
-                              type="button"
-                              className="w-full rounded-md px-2 py-2 text-left hover:bg-slate-50 flex items-center justify-between"
-                              onClick={() => onSelectSearchItem(item)}
-                            >
-                              <div><div className="text-sm font-medium">{item.template.templateName}</div><div className="text-xs text-muted-foreground">{item.template.templateCode}</div></div>
-                              <Badge variant="outline">Enter</Badge>
+                            <button key={key} type="button" className={rowClass} onClick={() => onSelectSearchItem(item)}>
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-medium">{item.template.templateName}</div>
+                                <div className="truncate text-xs text-muted-foreground">{item.template.templateCode}</div>
+                              </div>
+                              <Kbd>Enter</Kbd>
                             </button>
                           )
                         }
 
                         return (
-                          <button
-                            key={key}
-                            type="button"
-                            className="w-full rounded-md px-2 py-2 text-left hover:bg-slate-50 flex items-center justify-between"
-                            onClick={() => onSelectSearchItem(item)}
-                          >
-                            <div><div className="text-sm font-medium">{item.employee.employeeName}</div><div className="text-xs text-muted-foreground">{item.employee.role}</div></div>
-                            <Badge variant="outline">Enter</Badge>
+                          <button key={key} type="button" className={rowClass} onClick={() => onSelectSearchItem(item)}>
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-medium">{item.employee.employeeName}</div>
+                              <div className="truncate text-xs capitalize text-muted-foreground">{item.employee.role.replace(/-/g, " ")}</div>
+                            </div>
+                            <Kbd>Enter</Kbd>
                           </button>
                         )
                       })}
@@ -465,6 +544,17 @@ export function Topbar({
                 ))}
               </div>
             )}
+          </div>
+          <div className="flex items-center justify-between border-t border-border/60 bg-muted/15 px-4 py-2.5 text-[11px] text-muted-foreground">
+            <span>
+              <Kbd>Esc</Kbd> close
+            </span>
+            <span className="flex items-center gap-1">
+              <Kbd>{paletteModKey}</Kbd>
+              <span>+</span>
+              <Kbd>K</Kbd>
+              <span className="ml-1">open</span>
+            </span>
           </div>
         </DialogContent>
       </Dialog>
@@ -477,7 +567,9 @@ export function Topbar({
               ["Alt+1", "Go to KPI Items"],
               ["Alt+2", "Go to KPI Templates"],
               ["Alt+3", "Go to Template Allocation"],
-              ["Alt+4", "Go to Actuals vs Target"],
+              ["Alt+4", "Go to Period Tracker"],
+              ["Alt+5", "Go to Dashboard"],
+              ["Alt+6", "Go to Responsible Targets"],
               ["Cmd/Ctrl+K", "Open Command Palette"],
               ["Cmd/Ctrl+N", "Context-aware New Item"],
               ["Esc", "Close open dialog/sheet/drawer"],
