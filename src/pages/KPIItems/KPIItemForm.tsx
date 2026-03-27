@@ -3,10 +3,9 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useForm } from "react-hook-form"
 import { useNavigate } from "react-router-dom"
 import { z } from "zod"
-import { BarChart3, FileText, Check, CheckCircle2, Ship, Search, RotateCcw } from "lucide-react"
+import { BarChart3, FileText, CheckCircle2, Ship, Search, RotateCcw } from "lucide-react"
 
 import { toast } from "@/hooks/use-toast"
-import { useTenantKpiItems } from "@/hooks/useTenantScope"
 import { useKPIStore } from "@/store/kpiStore"
 import type {
   KPIItem,
@@ -17,7 +16,6 @@ import type {
   UnitType,
   CalculationType,
   PeriodType,
-  TrendDirection,
   UserRole,
   KPIStatus,
 } from "@/types/kpi.types"
@@ -27,6 +25,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -44,22 +43,14 @@ const categoryOptions = [
 const shipmentModeOptions = ["sea", "air", "road", "rail", "multimodal", "courier"] as const satisfies readonly ShipmentMode[]
 const tradeDirectionOptions = ["import", "export", "cross-trade", "import-clearance", "export-clearance"] as const satisfies readonly TradeDirection[]
 
+const unitTypeValues = ["currency", "number"] as const satisfies readonly UnitType[]
 const unitTypeOptions = [
-  "percentage",
-  "number",
-  "currency",
-  "days",
-  "hours",
-  "teu",
-  "cbm",
-  "tonnes",
-  "score",
-  "ratio",
-] as const satisfies readonly UnitType[]
+  { value: "currency", label: "Amount" },
+  { value: "number", label: "Number" },
+] as const satisfies readonly { value: (typeof unitTypeValues)[number]; label: string }[]
 
-const calculationTypeOptions = ["auto", "manual", "formula", "cumulative-ytd", "rolling-avg", "weighted-avg"] as const satisfies readonly CalculationType[]
+const calculationTypeOptions = ["auto", "manual", "percentage"] as const satisfies readonly CalculationType[]
 const periodTypeOptions = ["monthly", "quarterly", "annual", "weekly", "daily"] as const satisfies readonly PeriodType[]
-const trendDirectionOptions = ["higher-better", "lower-better", "target-range"] as const satisfies readonly TrendDirection[]
 
 const statusOptions = ["draft", "active", "archived"] as const satisfies readonly KPIStatus[]
 
@@ -85,7 +76,7 @@ const kpiItemSchema = z
   .object({
     definitionName: z.string().min(3, "Definition name is required"),
     kpiCode: z.string().min(3, "KPI code is required"),
-    itemName: z.string().min(3, "Item name is required"),
+    itemName: z.string().optional(),
     category: z.enum(categoryOptions),
     description: z.string().min(5, "Description is required"),
     businessScope: z.enum(businessScopeOptions),
@@ -95,13 +86,12 @@ const kpiItemSchema = z
     jobType: z.enum(jobTypeOptions),
     regionScope: z.enum(regionScopeOptions),
 
-    unitType: z.enum(unitTypeOptions),
+    unitType: z.enum(unitTypeValues),
     calculationType: z.enum(calculationTypeOptions),
     periodType: z.enum(periodTypeOptions),
     aggregation: z.string().min(2, "Aggregation is required"),
-    trendDirection: z.enum(trendDirectionOptions),
+    trendDirection: z.enum(["higher-better", "lower-better", "target-range"]),
     dataSource: z.string().min(2, "Data source is required"),
-    formula: z.string().optional(),
 
     thresholds: z.object({
       green: thresholdSchema,
@@ -155,13 +145,6 @@ const kpiItemSchema = z
         code: z.ZodIssueCode.custom,
         message: "Red min must be less than red max",
         path: ["thresholds", "red", "max"],
-      })
-    }
-    if (data.allowCarryForward && (data.carryForwardMissingValue === undefined || Number.isNaN(data.carryForwardMissingValue))) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Missing value is required when carry forward is enabled",
-        path: ["carryForwardMissingValue"],
       })
     }
   })
@@ -220,21 +203,6 @@ function smartGeneratedCode(definitionName: string, category: KPICategory): stri
   const prefix = categoryPrefix(category)
   if (!short) return `${prefix}-`
   return `${prefix}-${short}`
-}
-
-function highlightFormula(formula: string) {
-  const tokenRe = /^[A-Z][A-Za-z_0-9]+$/
-  const parts = formula.split(/([A-Z][A-Za-z_0-9]+)/g).filter((p) => p.length > 0)
-  return parts.map((part, idx) => {
-    const isToken = tokenRe.test(part)
-    return isToken ? (
-      <span key={`${idx}-${part}`} className="text-orange-600 font-medium">
-        {part}
-      </span>
-    ) : (
-      <span key={`${idx}-${part}`}>{part}</span>
-    )
-  })
 }
 
 function MultiPillSelect<T extends string>({
@@ -323,12 +291,11 @@ function KPIItemStepper({
 export default function KPIItemForm() {
   const navigate = useNavigate()
   const addKPIItem = useKPIStore((state) => state.addKPIItem)
-  const kpiItems = useTenantKpiItems()
 
   const defaultValues: FormData = {
     definitionName: "",
     kpiCode: "",
-    itemName: "",
+    itemName: undefined,
     category: "delivery",
     description: "",
     businessScope: "freight",
@@ -338,13 +305,12 @@ export default function KPIItemForm() {
     jobType: "All",
     regionScope: "Global",
 
-    unitType: "percentage",
+    unitType: "currency",
     calculationType: "auto",
     periodType: "monthly",
     aggregation: "Average",
     trendDirection: "higher-better",
     dataSource: "Manual",
-    formula: "",
 
     thresholds: {
       green: { min: 95, max: 100 },
@@ -371,30 +337,22 @@ export default function KPIItemForm() {
 
   const { watch, setValue, handleSubmit, control } = form
   const allValues = watch()
-  const formula = watch("formula") ?? ""
-  const kpiCode = watch("kpiCode")
   const watchedCategory = watch("category")
   const watchedDefinition = watch("definitionName")
   const watchedBusinessScope = watch("businessScope")
-  const watchedCarryForward = watch("allowCarryForward")
   const watchedShipmentModes = watch("shipmentModes")
   const watchedTradeDirections = watch("tradeDirections")
   const watchedJobType = watch("jobType")
   const watchedRegionScope = watch("regionScope")
-  const normalized = useMemo(() => normalizeKpiCode(kpiCode), [kpiCode])
 
   const [activeStep, setActiveStep] = useState<number>(0)
   const [manualCodeMode, setManualCodeMode] = useState(false)
-  const [codeCheckState, setCodeCheckState] = useState<"idle" | "duplicate" | "unique">("idle")
-  const [codeCheckMessage, setCodeCheckMessage] = useState("")
-  const [formulaValidation, setFormulaValidation] = useState<string>("")
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [libraryQuery, setLibraryQuery] = useState("")
   const [draftBannerOpen, setDraftBannerOpen] = useState(false)
   const [pendingDraft, setPendingDraft] = useState<FormData | null>(null)
 
   const sectionByStepRef = useRef<(HTMLElement | null)[]>([null, null, null])
-  const formulaInputRef = useRef<HTMLInputElement | null>(null)
   const DRAFT_KEY = "kpi-form-draft"
 
   useEffect(() => {
@@ -474,78 +432,6 @@ export default function KPIItemForm() {
     section?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
 
-  const validateFormula = () => {
-    const knownVariables = new Set([
-      "Actual_Value",
-      "Target_Value",
-      "Prior_Period",
-      "YTD_Sum",
-      "Count_Total",
-      "Days_Elapsed",
-      "Days_Remaining",
-      "Shipments_OnTime",
-      "Total_Shipments",
-    ])
-
-    let balance = 0
-    for (const ch of formula) {
-      if (ch === "(") balance += 1
-      if (ch === ")") balance -= 1
-      if (balance < 0) {
-        setFormulaValidation("Formula invalid: unbalanced parentheses.")
-        return
-      }
-    }
-    if (balance !== 0) {
-      setFormulaValidation("Formula invalid: unbalanced parentheses.")
-      return
-    }
-
-    const vars = formula.match(/[A-Za-z_][A-Za-z0-9_]*/g) ?? []
-    const unknown = vars.filter((v) => /[A-Za-z]/.test(v) && !knownVariables.has(v))
-    if (unknown.length > 0) {
-      setFormulaValidation(`Formula invalid: unknown variables (${[...new Set(unknown)].join(", ")})`)
-      return
-    }
-
-    setFormulaValidation("Formula looks valid.")
-  }
-
-  const insertVariableAtCursor = (variable: string) => {
-    const input = formulaInputRef.current
-    const current = formula ?? ""
-    if (!input) {
-      setValue("formula", `${current}${current ? " " : ""}${variable}`, { shouldValidate: true })
-      return
-    }
-    const start = input.selectionStart ?? current.length
-    const end = input.selectionEnd ?? current.length
-    const next = `${current.slice(0, start)}${variable}${current.slice(end)}`
-    setValue("formula", next, { shouldValidate: true })
-    requestAnimationFrame(() => {
-      const pos = start + variable.length
-      input.focus()
-      input.setSelectionRange(pos, pos)
-    })
-  }
-
-  const checkDuplicateCode = () => {
-    const normalizedCode = normalizeKpiCode(kpiCode)
-    const exists = kpiItems.some((item) => normalizeKpiCode(item.kpiCode) === normalizedCode)
-    if (!normalizedCode) {
-      setCodeCheckState("idle")
-      setCodeCheckMessage("")
-      return
-    }
-    if (exists) {
-      setCodeCheckState("duplicate")
-      setCodeCheckMessage(`Code ${normalizedCode} already exists. Try ${normalizedCode}-2`)
-      return
-    }
-    setCodeCheckState("unique")
-    setCodeCheckMessage("Code is unique.")
-  }
-
   const shipmentPills = useMemo<PillOption<ShipmentMode>[]>(
     () => [
       {
@@ -605,18 +491,6 @@ export default function KPIItemForm() {
     [],
   )
 
-  const variableOptions = [
-    "Actual_Value",
-    "Target_Value",
-    "Prior_Period",
-    "YTD_Sum",
-    "Count_Total",
-    "Days_Elapsed",
-    "Days_Remaining",
-    "Shipments_OnTime",
-    "Total_Shipments",
-  ] as const
-
   const kpiLibrary = useMemo(
     () => [
       { industry: "Financial", items: ["Revenue Growth %", "Gross Margin %", "EBITDA", "Cost per Unit", "Budget Variance %"] },
@@ -646,15 +520,18 @@ export default function KPIItemForm() {
       Customer: "customer",
       Quality: "compliance",
     }
-    const unitType: UnitType = label.includes("%") ? "percentage" : label.toLowerCase().includes("hours") ? "hours" : "number"
+    const lowerLabel = label.toLowerCase()
+    const unitType: (typeof unitTypeValues)[number] =
+      lowerLabel.includes("revenue") || lowerLabel.includes("amount") || lowerLabel.includes("cost") || lowerLabel.includes("currency")
+        ? "currency"
+        : "number"
 
     setValue("definitionName", label, { shouldValidate: true })
     setValue("itemName", label, { shouldValidate: true })
     setValue("category", categoryMap[industry] ?? "operational", { shouldValidate: true })
     setValue("description", `${label} KPI imported from ${industry} library template.`, { shouldValidate: true })
     setValue("unitType", unitType, { shouldValidate: true })
-    setValue("calculationType", "formula", { shouldValidate: true })
-    setValue("formula", "Actual_Value / Target_Value * 100", { shouldValidate: true })
+    setValue("calculationType", "percentage", { shouldValidate: true })
     setValue("dataSource", "BI Engine", { shouldValidate: true })
     setValue("visibleRoles", ["ops-exec", "ops-mgr"], { shouldValidate: true })
     setManualCodeMode(false)
@@ -667,7 +544,7 @@ export default function KPIItemForm() {
       id: crypto.randomUUID(),
       definitionName: values.definitionName,
       kpiCode: values.kpiCode,
-      itemName: values.itemName,
+      itemName: values.itemName?.trim() ? values.itemName : values.definitionName,
       category: values.category,
       description: values.description,
       businessScope: values.businessScope,
@@ -681,7 +558,6 @@ export default function KPIItemForm() {
       aggregation: values.aggregation,
       trendDirection: values.trendDirection,
       dataSource: values.dataSource,
-      formula: values.formula && values.formula.trim().length > 0 ? values.formula : undefined,
       thresholds: values.thresholds,
       allowCarryForward: values.allowCarryForward,
       ...(values.allowCarryForward && values.carryForwardMissingValue !== undefined
@@ -815,43 +691,8 @@ export default function KPIItemForm() {
                           placeholder="e.g. OTD-PERF"
                           className="font-mono"
                           onFocus={() => setManualCodeMode(true)}
-                          onBlur={() => checkDuplicateCode()}
-                          onChange={(event) => {
-                            field.onChange(event)
-                            setCodeCheckState("idle")
-                          }}
+                          onChange={field.onChange}
                         />
-                      </FormControl>
-                      <p className="mt-1 text-xs text-muted-foreground">Generated: <span className="font-mono text-brand-blue">{normalizeKpiCode(smartGeneratedCode(watchedDefinition, watchedCategory)) || "-"}</span></p>
-                      <p className="mt-1 text-xs">
-                        <span className={cn(manualCodeMode ? "text-amber-700" : "text-emerald-700")}>
-                          {manualCodeMode ? "Manual mode" : "Auto mode"}
-                        </span>
-                      </p>
-                      <p className="mt-2 text-xs font-mono text-muted-foreground">
-                        Normalized: {normalized || "-"}
-                      </p>
-                      {codeCheckState === "duplicate" ? (
-                        <p className="mt-1 text-xs text-red-600">{codeCheckMessage}</p>
-                      ) : null}
-                      {codeCheckState === "unique" ? (
-                        <p className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-700">
-                          <Check className="h-3.5 w-3.5" /> {codeCheckMessage}
-                        </p>
-                      ) : null}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={control}
-                  name="itemName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Item Name</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="e.g. On-time Delivery Performance %" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -894,19 +735,6 @@ export default function KPIItemForm() {
 
                 <FormField
                   control={control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem className="md:col-span-2">
-                      <FormLabel>Description</FormLabel>
-                      <FormControl>
-                        <Textarea {...field} placeholder="Describe KPI objective..." className="min-h-28" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={control}
                   name="businessScope"
                   render={({ field }) => (
                     <FormItem>
@@ -922,6 +750,20 @@ export default function KPIItemForm() {
                           <SelectItem value="corporate">Corporate (Non-Freight)</SelectItem>
                         </SelectContent>
                       </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea {...field} placeholder="Describe KPI objective..." className="min-h-28" />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -1074,8 +916,8 @@ export default function KPIItemForm() {
                         </FormControl>
                         <SelectContent>
                           {unitTypeOptions.map((opt) => (
-                            <SelectItem key={opt} value={opt}>
-                              {opt}
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1100,7 +942,7 @@ export default function KPIItemForm() {
                         <SelectContent>
                           {calculationTypeOptions.map((opt) => (
                             <SelectItem key={opt} value={opt}>
-                              {opt}
+                              {opt.charAt(0).toUpperCase() + opt.slice(1)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1124,56 +966,6 @@ export default function KPIItemForm() {
                         </FormControl>
                         <SelectContent>
                           {periodTypeOptions.map((opt) => (
-                            <SelectItem key={opt} value={opt}>
-                              {opt}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={control}
-                  name="aggregation"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Aggregation</FormLabel>
-                      <Select value={field.value} onValueChange={(val) => field.onChange(val)}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select aggregation" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {["Average", "Sum", "Weighted Avg", "Max", "Min"].map((opt) => (
-                            <SelectItem key={opt} value={opt}>
-                              {opt}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={control}
-                  name="trendDirection"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Trend Direction</FormLabel>
-                      <Select value={field.value} onValueChange={(val) => field.onChange(val as TrendDirection)}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select trend direction" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {trendDirectionOptions.map((opt) => (
                             <SelectItem key={opt} value={opt}>
                               {opt}
                             </SelectItem>
@@ -1212,53 +1004,6 @@ export default function KPIItemForm() {
 
                 <FormField
                   control={control}
-                  name="formula"
-                  render={({ field }) => (
-                    <FormItem className="md:col-span-2">
-                      <FormLabel>Formula (optional)</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          ref={formulaInputRef}
-                          className="font-mono"
-                          placeholder="e.g. (REVENUE - COST) / REVENUE * 100"
-                        />
-                      </FormControl>
-                      <div className="mt-3">
-                        <div className="mb-2 text-xs font-medium text-muted-foreground">Variable picker</div>
-                        <div className="flex flex-wrap gap-2">
-                          {variableOptions.map((v) => (
-                            <button
-                              key={v}
-                              type="button"
-                              className="rounded-full border border-brand-blue/30 bg-orange-50 px-2 py-1 text-xs font-mono text-brand-blue hover:bg-orange-100"
-                              onClick={() => insertVariableAtCursor(v)}
-                            >
-                              {v}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="mt-2 rounded-md border bg-slate-50 p-3 font-mono text-sm min-h-12">
-                        {formula.trim().length > 0 ? highlightFormula(formula) : <span className="text-muted-foreground">Preview will appear here…</span>}
-                      </div>
-                      <div className="mt-2 flex items-center gap-3">
-                        <Button type="button" variant="outline" size="sm" onClick={validateFormula}>
-                          Validate Formula
-                        </Button>
-                        {formulaValidation ? (
-                          <span className={cn("text-xs", formulaValidation.includes("invalid") ? "text-red-600" : "text-emerald-700")}>
-                            {formulaValidation}
-                          </span>
-                        ) : null}
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={control}
                   name="allowCarryForward"
                   render={({ field }) => (
                     <FormItem className="md:col-span-2 rounded-lg border border-slate-200 bg-slate-50/70 p-4">
@@ -1275,80 +1020,23 @@ export default function KPIItemForm() {
                         </div>
                         </div>
                         <FormControl>
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={field.value}
-                            onClick={() => field.onChange(!field.value)}
-                            className="inline-flex items-center gap-3"
-                          >
-                            <span
-                              className={cn(
-                                "relative h-8 w-16 rounded-full border transition-colors",
-                                field.value ? "border-orange-500 bg-orange-500" : "border-slate-300 bg-slate-300",
-                              )}
-                            >
-                              <span
-                                className={cn(
-                                  "absolute top-1 h-6 w-6 rounded-full bg-white shadow-md transition-transform",
-                                  field.value ? "translate-x-9" : "translate-x-1",
-                                )}
-                              />
-                              <span
-                                className={cn(
-                                  "absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-white transition-opacity",
-                                  field.value ? "opacity-0" : "opacity-90",
-                                )}
-                              >
-                                OFF
-                              </span>
-                              <span
-                                className={cn(
-                                  "absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-white transition-opacity",
-                                  field.value ? "opacity-100" : "opacity-0",
-                                )}
-                              >
-                                ON
-                              </span>
-                            </span>
+                          <div className="flex items-center gap-3">
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              aria-label="Carry forward missing value"
+                              className="data-[state=checked]:bg-orange-500 data-[state=unchecked]:bg-slate-300"
+                            />
                             <span className={cn("text-xs font-semibold", field.value ? "text-orange-600" : "text-slate-500")}>
                               {field.value ? "Enabled" : "Disabled"}
                             </span>
-                          </button>
+                          </div>
                         </FormControl>
                       </div>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-
-                {watchedCarryForward ? (
-                  <FormField
-                    control={control}
-                    name="carryForwardMissingValue"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Missing Value (default)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            placeholder="e.g. 0"
-                            value={field.value ?? ""}
-                            onChange={(e) => {
-                              const raw = e.target.value
-                              if (raw === "") {
-                                field.onChange(undefined)
-                                return
-                              }
-                              field.onChange(Number(raw))
-                            }}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                ) : null}
 
                 <FormField
                   control={control}

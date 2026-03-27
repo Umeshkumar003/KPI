@@ -27,6 +27,7 @@ type PeriodCloseResult = {
     target: number
     actual: number
     incomingBacklog: number
+    currentMonthBacklog: number
     carriedBacklog: number
     nextAdjustedTarget: number
     nextCycleLabel: string
@@ -216,6 +217,7 @@ export default function PeriodTrackerPage() {
         const actualForPeriod = (actualRow?.actual ?? 0) / cycleCount
         const incomingBacklog = trackerState.backlogByCycleKey[key] ?? 0
         const expected = targetForPeriod + incomingBacklog
+        const currentMonthBacklog = Math.max(0, targetForPeriod - actualForPeriod)
         const missing = Math.max(0, expected - actualForPeriod)
 
         totalTarget += expected
@@ -230,6 +232,7 @@ export default function PeriodTrackerPage() {
           target: targetForPeriod,
           actual: actualForPeriod,
           incomingBacklog,
+          currentMonthBacklog,
           carriedBacklog: missing,
           nextAdjustedTarget: targetForPeriod + missing,
           nextCycleLabel: labelForCycle(itemPeriodType, nextCycleIndex),
@@ -546,8 +549,9 @@ export default function PeriodTrackerPage() {
                     <th className="px-2 py-2 text-left font-semibold text-slate-700">Period</th>
                     <th className="px-2 py-2 text-right font-semibold text-slate-700">Target</th>
                     <th className="px-2 py-2 text-right font-semibold text-slate-700">Actual</th>
-                    <th className="px-2 py-2 text-right font-semibold text-slate-700">Backlog In</th>
-                    <th className="px-2 py-2 text-right font-semibold text-slate-700">Backlog Out</th>
+                    <th className="px-2 py-2 text-right font-semibold text-slate-700">Opening Backlog</th>
+                    <th className="px-2 py-2 text-right font-semibold text-slate-700">Current Month Backlog</th>
+                    <th className="px-2 py-2 text-right font-semibold text-slate-700">Carry Forward Backlog</th>
                     <th className="px-2 py-2 text-right font-semibold text-slate-700">Next Target</th>
                     <th className="px-2 py-2 text-left font-semibold text-slate-700">Next Period</th>
                     <th className="px-2 py-2 text-left font-semibold text-slate-700">Time stamp</th>
@@ -578,6 +582,7 @@ export default function PeriodTrackerPage() {
                       <td className="px-2 py-1 text-right font-mono">{r.target.toFixed(2)}</td>
                       <td className={`px-2 py-1 text-right font-mono ${r.actual >= r.target ? "text-emerald-700" : "text-red-700"}`}>{r.actual.toFixed(2)}</td>
                       <td className={`px-2 py-1 text-right font-mono ${r.incomingBacklog > 0 ? "text-red-700" : "text-emerald-700"}`}>{r.incomingBacklog.toFixed(2)}</td>
+                      <td className={`px-2 py-1 text-right font-mono ${r.currentMonthBacklog > 0 ? "text-amber-700 font-semibold" : "text-emerald-700"}`}>{r.currentMonthBacklog.toFixed(2)}</td>
                       <td className={`px-2 py-1 text-right font-mono ${r.carriedBacklog > 0 ? "text-red-700 font-semibold" : "text-emerald-700"}`}>{r.carriedBacklog.toFixed(2)}</td>
                       <td className={`px-2 py-1 text-right font-mono ${r.carriedBacklog > 0 ? "text-amber-700" : "text-slate-800"}`}>{r.nextAdjustedTarget.toFixed(2)}</td>
                       <td className="px-2 py-1">{r.nextCycleLabel}</td>

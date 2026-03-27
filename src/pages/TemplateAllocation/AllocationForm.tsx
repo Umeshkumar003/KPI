@@ -378,6 +378,9 @@ export default function AllocationForm({
   const [addKpiDialogOpen, setAddKpiDialogOpen] = useState(false)
   const [addKpiSearch, setAddKpiSearch] = useState("")
   const periodScrollContainerRef = useRef<HTMLDivElement | null>(null)
+  const historyCardRef = useRef<HTMLDivElement | null>(null)
+  const [isDistributing, setIsDistributing] = useState(false)
+  const [isFullFilling, setIsFullFilling] = useState(false)
 
   const selectedTemplate = useMemo(() => {
     if (!selectedTemplateId) return null
@@ -665,18 +668,36 @@ export default function AllocationForm({
 
   const distributeTargetsDown = () => {
     if (!node) return
+    if (isDistributing) return
+    if (!selectedTemplateId) {
+      toast({ title: "Select a template", description: "Choose a template before distributing targets." })
+      return
+    }
+    if (targets.length === 0) {
+      toast({ title: "No targets to distribute", description: "Add KPI rows and annual targets first." })
+      return
+    }
     const children = allNodes.filter((n) => n.parentId === node.id)
     if (children.length === 0) {
       toast({ title: "No direct reports", description: "This node has no children to distribute to." })
       return
     }
     if (distributionMethod === "custom") {
+      if (customRatios.length !== children.length) {
+        toast({ title: "Custom ratio mismatch", description: "Set one ratio for each direct report." })
+        return
+      }
+      if (customRatios.some((value) => !Number.isFinite(value) || value < 0)) {
+        toast({ title: "Invalid ratio values", description: "Custom ratios must be valid values greater than or equal to 0." })
+        return
+      }
       const ratioTotal = customRatios.reduce((sum, value) => sum + value, 0)
       if (ratioTotal !== 100) {
         toast({ title: "Invalid ratio", description: "Custom ratio must add up to 100%." })
         return
       }
     }
+    setIsDistributing(true)
     const weightByChild = children.map((child, idx) => {
       if (distributionMethod === "equal") return 1
       if (distributionMethod === "headcount") {
@@ -703,6 +724,7 @@ export default function AllocationForm({
       })
     })
     toast({ title: "Targets cascaded", description: `Targets cascaded to ${children.length} direct reports` })
+    setIsDistributing(false)
   }
 
   const parentName = node?.parentId ? NODE_NAME_BY_ID[node.parentId] ?? null : null
@@ -762,6 +784,20 @@ export default function AllocationForm({
     if (!node) return []
     return allNodes.filter((n) => n.parentId === node.id)
   }, [allNodes, node])
+  const customRatioTotal = useMemo(() => customRatios.reduce((sum, n) => sum + n, 0), [customRatios])
+
+  useEffect(() => {
+    if (directReportNodes.length === 0) {
+      setCustomRatios([])
+      return
+    }
+    setCustomRatios((prev) => {
+      if (prev.length === directReportNodes.length) return prev
+      const equal = Math.floor(100 / directReportNodes.length)
+      const remainder = 100 - equal * directReportNodes.length
+      return directReportNodes.map((_, idx) => equal + (idx === 0 ? remainder : 0))
+    })
+  }, [directReportNodes])
 
   const distributionMethodHelp = useMemo(() => {
     switch (distributionMethod) {
@@ -792,14 +828,18 @@ export default function AllocationForm({
   /** Fill annual targets from this level's flow budget (demo amounts), split by KPI weight, then sync periods. */
   const fullFillFromFlow = () => {
     if (!node || lockInputs) return
+    if (isFullFilling) return
+    setIsFullFilling(true)
     if (targets.length === 0) {
       toast({ title: "No KPI rows", description: "Add KPIs from your template before using Full fill." })
+      setIsFullFilling(false)
       return
     }
     const slot = flowSlots.find((s) => s.role === node.role)
     const budget = slot?.amount ?? 0
     if (budget <= 0) {
       toast({ title: "No flow budget", description: "There is no budget amount for this level in the distribution flow." })
+      setIsFullFilling(false)
       return
     }
     const totalSalesIdx = targets.findIndex((t) => t.kpiName === "TOTAL SALES")
@@ -825,6 +865,7 @@ export default function AllocationForm({
         title: "Full fill applied",
         description: `TOTAL SALES set to ${formatFlowAmount(budget)} (flow envelope); other KPIs unchanged.`,
       })
+      setIsFullFilling(false)
       return
     }
 
@@ -864,6 +905,7 @@ export default function AllocationForm({
       title: "Full fill applied",
       description: `Annual targets set from flow budget (${formatFlowAmount(budget)}); periods synced.`,
     })
+    setIsFullFilling(false)
   }
 
   const handleSaveAllocation = async () => {
@@ -922,7 +964,7 @@ export default function AllocationForm({
 
   return (
     <div className="space-y-4">
-      <Card>
+      <Card ref={historyCardRef}>
         <CardContent className="p-6">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-orange-100 text-brand-blue text-sm font-semibold">
@@ -943,7 +985,13 @@ export default function AllocationForm({
             </div>
 
             <div className="ml-auto flex flex-wrap items-center gap-3">
-              <Button type="button" variant="outline" onClick={() => setCopyDialogOpen(true)}>
+              <Button
+                type="button"
+                variant="outline"
+                title="Copy targets from peers at this hierarchy level or use last fiscal year snapshot"
+                aria-label="Copy targets from peer or previous year"
+                onClick={() => setCopyDialogOpen(true)}
+              >
                 Copy from...
               </Button>
               <div className="min-w-[220px]">
@@ -1501,7 +1549,7 @@ export default function AllocationForm({
               </div>
               {distributionMethod === "custom" ? (
                 <div className="rounded-md border bg-white p-3 space-y-2">
-                  {allNodes.filter((n) => n.parentId === node.id).map((child, idx) => (
+                  {directReportNodes.map((child, idx) => (
                     <div key={child.id} className="flex items-center justify-between gap-2">
                       <span className="text-sm">{child.name}</span>
                       <div className="flex items-center gap-1">
@@ -1513,7 +1561,7 @@ export default function AllocationForm({
                             const value = Number(e.target.value)
                             setCustomRatios((prev) => {
                               const next = [...prev]
-                              next[idx] = Number.isFinite(value) ? value : 0
+                              next[idx] = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0
                               return next
                             })
                           }}
@@ -1522,8 +1570,8 @@ export default function AllocationForm({
                       </div>
                     </div>
                   ))}
-                  <div className={cn("text-xs", customRatios.reduce((sum, n) => sum + n, 0) === 100 ? "text-emerald-700" : "text-red-600")}>
-                    Ratio total: {customRatios.reduce((sum, n) => sum + n, 0)}% (must be 100%)
+                  <div className={cn("text-xs", customRatioTotal === 100 ? "text-emerald-700" : "text-red-600")}>
+                    Ratio total: {customRatioTotal}% (must be 100%)
                   </div>
                 </div>
               ) : null}
@@ -1537,21 +1585,27 @@ export default function AllocationForm({
                 type="button"
                 className="gap-1.5"
                 onClick={distributeTargetsDown}
-                disabled={lockInputs}
+                disabled={
+                  lockInputs ||
+                  isDistributing ||
+                  targets.length === 0 ||
+                  directReportNodes.length === 0 ||
+                  (distributionMethod === "custom" && customRatioTotal !== 100)
+                }
                 title={lockInputs ? "Unlock targets to distribute" : undefined}
               >
-                Distribute Targets Down ↓
+                {isDistributing ? "Distributing..." : "Distribute Targets Down ↓"}
               </Button>
               <Button
                 type="button"
                 variant="secondary"
                 className="gap-1.5"
                 onClick={fullFillFromFlow}
-                disabled={lockInputs || targets.length === 0}
+                disabled={lockInputs || targets.length === 0 || isFullFilling}
                 title="Set annual targets from this level’s flow budget by KPI weight, then split H1/H2 and quarters"
               >
                 <Sparkles className="h-4 w-4 shrink-0 text-orange-500" aria-hidden="true" />
-                Full fill
+                {isFullFilling ? "Filling..." : "Full fill"}
               </Button>
               <Button
                 type="button"
@@ -1568,9 +1622,12 @@ export default function AllocationForm({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => toast({ title: "All allocations", description: "Showing allocations list (demo)." })}
+                onClick={() => {
+                  setHistoryOpen(true)
+                  historyCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+                }}
               >
-                View All Allocations →
+                View Change History →
               </Button>
             </div>
           </div>
@@ -1792,45 +1849,61 @@ export default function AllocationForm({
       >
         <DialogContent
           overlayClassName="bg-white/90 backdrop-blur-sm dark:bg-white/88"
-          className="border-slate-200 bg-white text-slate-900 shadow-xl dark:bg-white dark:text-slate-900"
+          className="max-h-[85vh] gap-0 overflow-hidden border-slate-200 bg-white p-0 text-slate-900 shadow-xl dark:bg-white dark:text-slate-900 sm:max-w-2xl"
         >
-          <DialogHeader>
-            <DialogTitle>Copy from...</DialogTitle>
-            <DialogDescription>
-              Copy from a peer on the same level, or load a demo snapshot from the previous fiscal year.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <div className="mb-1.5 text-xs font-medium text-muted-foreground">Same hierarchy level</div>
-              <Input value={copySearch} onChange={(e) => setCopySearch(e.target.value)} placeholder="Search person or team" />
-              <div className="mt-2 max-h-52 overflow-y-auto rounded-md border border-slate-200 bg-white dark:bg-white">
+          <div className="border-b border-slate-200/90 bg-gradient-to-br from-slate-50 via-white to-orange-50/45 px-6 pb-5 pt-6">
+            <DialogHeader>
+              <DialogTitle className="text-xl">Copy from...</DialogTitle>
+              <DialogDescription>
+                Copy from a peer on the same level, or load a demo snapshot from the previous fiscal year.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="space-y-5 overflow-y-auto px-6 py-5">
+            <div className="space-y-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Same hierarchy level</div>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={copySearch}
+                  onChange={(e) => setCopySearch(e.target.value)}
+                  placeholder="Search person or team"
+                  className="h-10 border-slate-200 bg-white pl-10"
+                />
+              </div>
+              <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white">
                 {filteredPeers.length === 0 ? (
-                  <div className="px-3 py-6 text-center text-sm text-muted-foreground">No peers at this level.</div>
+                  <div className="px-3 py-8 text-center text-sm text-muted-foreground">No peers at this level.</div>
                 ) : (
                   filteredPeers.map((peer) => (
                     <button
                       key={peer.id}
                       type="button"
                       className={cn(
-                        "w-full px-3 py-2.5 text-left text-sm transition-colors hover:bg-slate-50",
-                        copyFromNodeId === peer.id ? "bg-orange-50 text-brand-blue" : "text-foreground",
+                        "w-full border-b border-slate-100 px-3 py-2.5 text-left text-sm transition-colors last:border-b-0",
+                        copyFromNodeId === peer.id
+                          ? "bg-orange-50 text-brand-blue"
+                          : "text-foreground hover:bg-slate-50",
                       )}
                       onClick={() => setCopyFromNodeId(peer.id)}
                     >
-                      {peer.name}
+                      <div className="font-medium">{peer.name}</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {roleLabel(peer.role)} - {peer.region}
+                      </div>
                     </button>
                   ))
                 )}
               </div>
             </div>
-            <Separator />
-            <div>
-              <div className="mb-1.5 text-xs font-medium text-muted-foreground">Historical</div>
+
+            <div className="space-y-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Historical</div>
               <Button
                 type="button"
                 variant="outline"
-                className="h-auto w-full justify-start gap-2 py-3 text-left"
+                className="h-auto w-full justify-start gap-2 rounded-lg border-slate-200 !bg-transparent py-3 text-left !text-slate-900 hover:!bg-transparent active:!bg-transparent [&_svg]:!text-slate-500"
                 disabled={lockInputs || targets.length === 0}
                 title={
                   targets.length === 0
@@ -1845,9 +1918,9 @@ export default function AllocationForm({
                   setConfirmCopyOpen(true)
                 }}
               >
-                <CalendarClock className="h-4 w-4 shrink-0 text-orange-500" aria-hidden="true" />
+                <CalendarClock className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
                 <span>
-                  Copy from <span className="font-medium">{PREVIOUS_FISCAL_YEAR}</span>
+                  Copy from <span className="font-medium text-slate-900">{PREVIOUS_FISCAL_YEAR}</span>
                   <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
                     Uses ~88% of current annual targets as a last-year snapshot (demo until archived data is connected).
                   </span>
@@ -1855,7 +1928,8 @@ export default function AllocationForm({
               </Button>
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+
+          <DialogFooter className="gap-2 border-t border-slate-200/80 bg-slate-50/70 px-6 py-4 sm:gap-0">
             <Button type="button" variant="outline" onClick={() => setCopyDialogOpen(false)}>
               Cancel
             </Button>

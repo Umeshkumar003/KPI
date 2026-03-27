@@ -28,6 +28,7 @@ export type UnitType =
 export type CalculationType =
   | "auto"
   | "manual"
+  | "percentage"
   | "formula"
   | "cumulative-ytd"
   | "rolling-avg"

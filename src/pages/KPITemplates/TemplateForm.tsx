@@ -875,27 +875,6 @@ export default function TemplateForm() {
                     )}
                   />
 
-                  <FormField
-                    control={control}
-                    name="applicableRoles"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Applicable Roles</FormLabel>
-                        <FormControl>
-                          <MultiPillSelect
-                            value={field.value}
-                            options={applicableRoleOptions.map((opt) => ({
-                              value: opt.value,
-                              label: opt.label,
-                              color: { border: "border-slate-200", bg: "bg-brand-blue", text: "text-white" },
-                            }))}
-                            onChange={(next) => field.onChange(next as UserRole[])}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
               </div>
               {businessScope === "freight" ? (
                 <FormField
@@ -919,30 +898,6 @@ export default function TemplateForm() {
                 </div>
               )}
 
-              <FormField
-                control={control}
-                name="periodType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Period Type</FormLabel>
-                    <Select value={field.value} onValueChange={(val) => field.onChange(val as PeriodType)}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select period type" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {periodTypeOptions.map((opt) => (
-                          <SelectItem key={opt} value={opt}>
-                            {opt.charAt(0).toUpperCase() + opt.slice(1)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
 
               <div className="col-span-1">
                 <Label>Status</Label>
@@ -1336,103 +1291,124 @@ export default function TemplateForm() {
       </div>
       </div>
       <Dialog open={priorityOpen} onOpenChange={setPriorityOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Weight by priority</DialogTitle>
-            <DialogDescription>Reorder items by priority. Weights follow 30/25/20/15/10, then remaining split equally.</DialogDescription>
+            <DialogDescription>
+              Reorder KPI items by priority. Top items get higher weight first (30/25/20/15/10), then remaining items are split.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            {priorityItems.map((item, index) => (
-              <div
-                key={`priority-${item.kpiItemId}`}
-                className="flex items-center gap-2 rounded border p-2"
-                draggable
-                onDragStart={() => setDraggedPriorityId(item.kpiItemId)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => {
-                  if (!draggedPriorityId || draggedPriorityId === item.kpiItemId) return
-                  setPriorityItems((prev) => {
-                    const from = prev.findIndex((x) => x.kpiItemId === draggedPriorityId)
-                    const to = prev.findIndex((x) => x.kpiItemId === item.kpiItemId)
-                    if (from < 0 || to < 0) return prev
-                    const next = [...prev]
-                    const [moved] = next.splice(from, 1)
-                    next.splice(to, 0, moved)
-                    return next
-                  })
-                  setDraggedPriorityId(null)
-                }}
-              >
-                <span className="w-6 text-center text-xs font-semibold">{index + 1}</span>
-                <span className="flex-1 text-sm">{item.kpiName}</span>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => {
-                    if (index === 0) return
-                    setPriorityItems((prev) => {
-                      const next = [...prev]
-                      ;[next[index - 1], next[index]] = [next[index], next[index - 1]]
-                      return next
-                    })
-                  }}
-                >
-                  <ArrowUp className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => {
-                    if (index === priorityItems.length - 1) return
-                    setPriorityItems((prev) => {
-                      const next = [...prev]
-                      ;[next[index + 1], next[index]] = [next[index], next[index + 1]]
-                      return next
-                    })
-                  }}
-                >
-                  <ArrowDown className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
+          <div className="rounded-md border bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            Tip: drag rows or use arrow buttons to change order. This list is scrollable for long templates.
           </div>
-          <Button type="button" onClick={applyPriorityWeights}>
-            Apply priority weights
-          </Button>
+          <div className="max-h-[50vh] overflow-y-auto pr-1">
+            <div className="space-y-2">
+              {priorityItems.map((item, index) => (
+                <div
+                  key={`priority-${item.kpiItemId}`}
+                  className="flex items-center gap-2 rounded border bg-white p-2"
+                  draggable
+                  onDragStart={() => setDraggedPriorityId(item.kpiItemId)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => {
+                    if (!draggedPriorityId || draggedPriorityId === item.kpiItemId) return
+                    setPriorityItems((prev) => {
+                      const from = prev.findIndex((x) => x.kpiItemId === draggedPriorityId)
+                      const to = prev.findIndex((x) => x.kpiItemId === item.kpiItemId)
+                      if (from < 0 || to < 0) return prev
+                      const next = [...prev]
+                      const [moved] = next.splice(from, 1)
+                      next.splice(to, 0, moved)
+                      return next
+                    })
+                    setDraggedPriorityId(null)
+                  }}
+                >
+                  <span className="w-6 text-center text-xs font-semibold">{index + 1}</span>
+                  <span className="flex-1 truncate text-sm">{item.kpiName}</span>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => {
+                      if (index === 0) return
+                      setPriorityItems((prev) => {
+                        const next = [...prev]
+                        ;[next[index - 1], next[index]] = [next[index], next[index - 1]]
+                        return next
+                      })
+                    }}
+                  >
+                    <ArrowUp className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => {
+                      if (index === priorityItems.length - 1) return
+                      setPriorityItems((prev) => {
+                        const next = [...prev]
+                        ;[next[index + 1], next[index]] = [next[index], next[index + 1]]
+                        return next
+                      })
+                    }}
+                  >
+                    <ArrowDown className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t pt-3">
+            <Button type="button" variant="outline" onClick={() => setPriorityOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={applyPriorityWeights}>
+              Apply priority weights
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={customOpen} onOpenChange={setCustomOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Custom weight preset</DialogTitle>
             <DialogDescription>Enter custom weights. Total must be exactly 100%.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            {watchedKpiItems.map((item) => (
-              <div key={`custom-${item.kpiItemId}`} className="flex items-center gap-2">
-                <span className="flex-1 text-sm">{item.kpiName}</span>
-                <Input
-                  type="number"
-                  className="w-24"
-                  value={customPreset[item.kpiItemId] ?? 0}
-                  onChange={(e) =>
-                    setCustomPreset((prev) => ({
-                      ...prev,
-                      [item.kpiItemId]: Number(e.target.value),
-                    }))
-                  }
-                />
-                <span className="text-xs">%</span>
-              </div>
-            ))}
+          <div className="max-h-[50vh] overflow-y-auto pr-1">
+            <div className="space-y-2">
+              {watchedKpiItems.map((item) => (
+                <div key={`custom-${item.kpiItemId}`} className="flex items-center gap-2 rounded border bg-white p-2">
+                  <span className="flex-1 truncate text-sm">{item.kpiName}</span>
+                  <Input
+                    type="number"
+                    className="w-24"
+                    value={customPreset[item.kpiItemId] ?? 0}
+                    onChange={(e) =>
+                      setCustomPreset((prev) => ({
+                        ...prev,
+                        [item.kpiItemId]: Number(e.target.value),
+                      }))
+                    }
+                  />
+                  <span className="text-xs">%</span>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className={cn("text-sm", customPresetTotal === 100 ? "text-brand-teal" : "text-brand-red")}>Total: {customPresetTotal}%</div>
-          <Button type="button" disabled={customPresetTotal !== 100} onClick={applyCustomPreset}>
-            Apply custom preset
-          </Button>
+          <div className="flex items-center justify-between border-t pt-3">
+            <div className={cn("text-sm", customPresetTotal === 100 ? "text-brand-teal" : "text-brand-red")}>Total: {customPresetTotal}%</div>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" onClick={() => setCustomOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" disabled={customPresetTotal !== 100} onClick={applyCustomPreset}>
+                Apply custom preset
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </Form>
