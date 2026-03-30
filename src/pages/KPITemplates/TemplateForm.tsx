@@ -11,6 +11,7 @@ import {
   Search,
   ArrowDown,
   ArrowUp,
+  Ship,
   X,
 } from "lucide-react"
 
@@ -27,6 +28,7 @@ import type {
   PeriodType,
   ShipmentMode,
   TemplateKPIItem,
+  TradeDirection,
   UnitType,
   UserRole,
 } from "@/types/kpi.types"
@@ -52,18 +54,37 @@ const periodTypeOptions = ["annual", "quarterly", "monthly", "weekly", "daily"] 
 const businessScopeOptions = ["freight", "corporate"] as const satisfies readonly BusinessScope[]
 
 const shipmentModePills = [
-  { value: "sea" as const, label: "Sea", color: { border: "border-orange-200", bg: "bg-orange-600", text: "text-white" } },
-  { value: "air" as const, label: "Air", color: { border: "border-purple-200", bg: "bg-purple-600", text: "text-white" } },
-  { value: "road" as const, label: "Road", color: { border: "border-amber-200", bg: "bg-amber-500", text: "text-black" } },
+  { value: "sea" as const, label: "Sea Freight", color: { border: "border-orange-200", bg: "bg-orange-600", text: "text-white" } },
+  { value: "air" as const, label: "Air Freight", color: { border: "border-purple-200", bg: "bg-purple-600", text: "text-white" } },
+  { value: "road" as const, label: "Road Freight", color: { border: "border-amber-200", bg: "bg-amber-500", text: "text-black" } },
   { value: "rail" as const, label: "Rail", color: { border: "border-brand-teal/30", bg: "bg-brand-teal", text: "text-white" } },
   { value: "multimodal" as const, label: "Multi-modal", color: { border: "border-orange-200", bg: "bg-orange-500", text: "text-white" } },
+  { value: "courier" as const, label: "Courier", color: { border: "border-green-200", bg: "bg-green-600", text: "text-white" } },
 ] as const
+
+const tradeDirectionOptions = [
+  "import",
+  "export",
+  "cross-trade",
+  "import-clearance",
+  "export-clearance",
+] as const satisfies readonly TradeDirection[]
 
 type PillOption<T extends string> = {
   value: T
   label: string
   color: { border: string; bg: string; text: string }
 }
+
+const tradeDirectionPills: PillOption<TradeDirection>[] = [
+  { value: "import", label: "Import", color: { border: "border-brand-blue/30", bg: "bg-brand-blue", text: "text-white" } },
+  { value: "export", label: "Export", color: { border: "border-brand-blue/30", bg: "bg-brand-blue", text: "text-white" } },
+  { value: "cross-trade", label: "Cross Trade", color: { border: "border-brand-blue/30", bg: "bg-brand-blue", text: "text-white" } },
+  { value: "import-clearance", label: "Import Clearance", color: { border: "border-brand-blue/30", bg: "bg-brand-blue", text: "text-white" } },
+  { value: "export-clearance", label: "Export Clearance", color: { border: "border-brand-blue/30", bg: "bg-brand-blue", text: "text-white" } },
+]
+
+const jobTypeOptions = ["All", "FCL", "LCL", "Breakbulk", "Project Cargo", "Reefer", "Hazmat"] as const
 
 const templateCategoryOptions = [
   "Sales Performance",
@@ -111,18 +132,29 @@ const templateSchema = z
     businessScope: z.enum(businessScopeOptions),
     applicableRoles: z.array(z.enum(applicableRoleOptions.map((o) => o.value) as [UserRole, ...UserRole[]])).min(1, "Select at least one role"),
     shipmentModes: z.array(z.enum(shipmentModePills.map((o) => o.value) as ShipmentMode[])),
+    tradeDirections: z.array(z.enum(tradeDirectionOptions)),
+    jobType: z.enum(jobTypeOptions),
     periodType: z.enum(periodTypeOptions),
     description: z.string().min(5, "Description is required"),
     statusId: z.enum(statusOptions),
     kpiItems: z.array(templateKpiItemSchema),
   })
   .superRefine((data, ctx) => {
-    if (data.businessScope === "freight" && data.shipmentModes.length < 1) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Select at least one mode",
-        path: ["shipmentModes"],
-      })
+    if (data.businessScope === "freight") {
+      if (data.shipmentModes.length < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Select at least one mode",
+          path: ["shipmentModes"],
+        })
+      }
+      if (data.tradeDirections.length < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Select at least one trade direction",
+          path: ["tradeDirections"],
+        })
+      }
     }
     const weightTotal = data.kpiItems.reduce((sum, item) => sum + item.weight, 0)
     if (data.statusId === "active") {
@@ -525,6 +557,8 @@ export default function TemplateForm() {
       businessScope: "freight",
       applicableRoles: ["leadership"],
       shipmentModes: ["sea"],
+      tradeDirections: ["import"],
+      jobType: "All",
       periodType: "annual",
       description: "",
       statusId: "draft",
@@ -546,6 +580,10 @@ export default function TemplateForm() {
       businessScope: t.businessScope ?? "freight",
       applicableRoles: t.applicableRoles ?? ["leadership"],
       shipmentModes: t.shipmentModes,
+      tradeDirections: t.tradeDirections?.length ? t.tradeDirections : ["import"],
+      jobType: (jobTypeOptions as readonly string[]).includes(t.jobType ?? "")
+        ? (t.jobType as FormData["jobType"])
+        : "All",
       periodType: t.periodType,
       description: t.description,
       statusId: (t.statusId === "active" ? "active" : "draft") as StatusPill,
@@ -563,6 +601,7 @@ export default function TemplateForm() {
 
   const watchedKpiItems = useWatch({ control, name: "kpiItems" })
   const shipmentModes = useWatch({ control, name: "shipmentModes" })
+  const tradeDirectionsWatched = useWatch({ control, name: "tradeDirections" })
   const templateCode = useWatch({ control, name: "templateCode" })
   const statusId = useWatch({ control, name: "statusId" })
   const templateName = useWatch({ control, name: "templateName" })
@@ -666,15 +705,14 @@ export default function TemplateForm() {
 
   useEffect(() => {
     if (businessScope === "corporate") {
-      if (shipmentModes.length > 0) {
-        setValue("shipmentModes", [], { shouldValidate: true })
-      }
+      if (shipmentModes.length > 0) setValue("shipmentModes", [], { shouldValidate: true })
+      if ((tradeDirectionsWatched ?? []).length > 0) setValue("tradeDirections", [], { shouldValidate: true })
+      setValue("jobType", "All", { shouldValidate: true })
       return
     }
-    if (shipmentModes.length === 0) {
-      setValue("shipmentModes", ["sea"], { shouldValidate: true })
-    }
-  }, [businessScope, setValue, shipmentModes])
+    if (shipmentModes.length === 0) setValue("shipmentModes", ["sea"], { shouldValidate: true })
+    if ((tradeDirectionsWatched ?? []).length === 0) setValue("tradeDirections", ["import"], { shouldValidate: true })
+  }, [businessScope, setValue, shipmentModes, tradeDirectionsWatched])
 
   const applyPriorityWeights = () => {
     const fixed = [30, 25, 20, 15, 10]
@@ -722,6 +760,8 @@ export default function TemplateForm() {
         businessScope: values.businessScope,
         applicableRoles: values.applicableRoles,
         shipmentModes: values.businessScope === "corporate" ? [] : values.shipmentModes,
+        tradeDirections: values.businessScope === "corporate" ? [] : values.tradeDirections,
+        jobType: values.businessScope === "corporate" ? "All" : values.jobType,
         periodType: values.periodType,
         description: values.description,
         statusId: mode as KPIStatus,
@@ -877,24 +917,80 @@ export default function TemplateForm() {
 
               </div>
               {businessScope === "freight" ? (
-                <FormField
-                  control={control}
-                  name="shipmentModes"
-                  render={({ field }) => (
-                    <FormItem className="col-span-2">
-                      <FormLabel>Shipment Modes</FormLabel>
-                      <MultiPillSelect
-                        value={field.value}
-                        options={shipmentModeOptions}
-                        onChange={(next) => setValue("shipmentModes", next as ShipmentMode[], { shouldValidate: true })}
-                      />
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="col-span-2 space-y-5 rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand-teal/10 text-brand-teal">
+                      <Ship className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">Freight Scope</p>
+                      <p className="text-xs text-muted-foreground">Select how this template applies across freight operations</p>
+                    </div>
+                  </div>
+
+                  <FormField
+                    control={control}
+                    name="shipmentModes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Shipment Modes</FormLabel>
+                        <MultiPillSelect
+                          value={field.value}
+                          options={shipmentModeOptions}
+                          onChange={(next) => setValue("shipmentModes", next as ShipmentMode[], { shouldValidate: true })}
+                        />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={control}
+                    name="tradeDirections"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Trade Directions</FormLabel>
+                        <MultiPillSelect
+                          value={field.value}
+                          options={tradeDirectionPills}
+                          onChange={(next) => setValue("tradeDirections", next as TradeDirection[], { shouldValidate: true })}
+                        />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={control}
+                    name="jobType"
+                    render={({ field }) => (
+                      <FormItem className="max-w-md">
+                        <FormLabel>Equipment Type</FormLabel>
+                        <Select
+                          value={field.value}
+                          onValueChange={(val) => field.onChange(val as FormData["jobType"])}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select equipment type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {jobTypeOptions.map((opt) => (
+                              <SelectItem key={opt} value={opt}>
+                                {opt}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               ) : (
                 <div className="col-span-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                  Corporate template selected. Shipment modes are not required.
+                  Corporate template selected. Shipment modes, trade directions, and equipment type are not required.
                 </div>
               )}
 

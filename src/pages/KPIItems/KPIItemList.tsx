@@ -35,7 +35,6 @@ export default function KPIItemList() {
                 <TableRow>
                   <TableHead>Code</TableHead>
                   <TableHead>Name</TableHead>
-                  <TableHead>Category</TableHead>
                   <TableHead>Period</TableHead>
                   <TableHead>Weight</TableHead>
                   <TableHead>Status</TableHead>
@@ -46,7 +45,6 @@ export default function KPIItemList() {
                   <TableRow key={item.id}>
                     <TableCell>{item.kpiCode}</TableCell>
                     <TableCell>{item.itemName}</TableCell>
-                    <TableCell className="capitalize">{item.category}</TableCell>
                     <TableCell className="capitalize">{item.periodType}</TableCell>
                     <TableCell>{item.weight}%</TableCell>
                     <TableCell className="capitalize">{item.statusId}</TableCell>

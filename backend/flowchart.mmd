@@ -1,14 +1,18 @@
-%% KPI Management System — end-to-end process flows (from frontend behaviour)
+%% KPI Management System — end-to-end process flows (from frontend mock + Zustand behaviour)
 %% Render with Mermaid (https://mermaid.live) or any Mermaid-capable viewer.
 
 flowchart TB
-  subgraph KPI["1. KPI definition (KPIItemForm)"]
-    KPI_START([Start]) --> KPI_VALIDATE{Valid thresholds<br/>and freight rules?}
+  subgraph KPI["1. KPI definition (KPIItemForm — simplified UI)"]
+    KPI_START([Start]) --> KPI_LIB{Import from library?}
+    KPI_LIB -->|yes| KPI_FILL[fillFromLibrary: Vision / core presets → form fields]
+    KPI_LIB -->|no| KPI_MAN[User enters identity + measurement]
+    KPI_FILL --> KPI_VALIDATE
+    KPI_MAN --> KPI_VALIDATE{Valid thresholds?}
     KPI_VALIDATE -->|no| KPI_ERR[Return validation errors]
     KPI_VALIDATE -->|yes| KPI_CARRY{allowCarryForward?}
-    KPI_CARRY -->|yes| KPI_CFV[Require carryForwardMissingValue]
+    KPI_CARRY -->|yes| KPI_CFV[Optional carryForwardMissingValue]
     KPI_CARRY -->|no| KPI_SAVE
-    KPI_CFV --> KPI_SAVE[Persist kpi_master + thresholds + modes + roles]
+    KPI_CFV --> KPI_SAVE[Persist kpi_master + thresholds + modes + trade dirs + roles<br/>app applies category / freight defaults]
     KPI_SAVE --> KPI_FORMULA{calculationType = formula?}
     KPI_FORMULA -->|yes| KPI_CALC[kpi_calculation: formula / SP]
     KPI_FORMULA -->|no| KPI_END
@@ -17,11 +21,12 @@ flowchart TB
   end
 
   subgraph TMPL["2. Template build (TemplateForm)"]
-    T_START([Start]) --> T_PICK[Select KPIs from kpi_master]
+    T_START([Start]) --> T_SCOPE[Business scope + freight scope: modes, trade directions, job_type]
+    T_SCOPE --> T_PICK[Select KPIs from kpi_master filtered by scope]
     T_PICK --> T_WEIGHT[Weights must sum 100% when active]
     T_WEIGHT --> T_WEIGHT_OK{Total = 100?}
     T_WEIGHT_OK -->|no| T_ERR[Block activation]
-    T_WEIGHT_OK -->|yes| T_SAVE[kpi_template + lines + roles + shipment modes]
+    T_WEIGHT_OK -->|yes| T_SAVE[kpi_template + job_type + lines + roles + shipment modes + trade directions]
     T_SAVE --> T_VER[Increment version + changelog]
     T_VER --> T_END([Template ready])
     T_ERR --> T_PICK

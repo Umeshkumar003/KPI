@@ -112,6 +112,10 @@ export interface KPITemplate {
   businessScope?: BusinessScope
   applicableRoles: UserRole[]
   shipmentModes: ShipmentMode[]
+  /** Freight trade lanes; empty when businessScope is corporate. */
+  tradeDirections: TradeDirection[]
+  /** Equipment / cargo type scope (aligned with KPI item job type); "All" when corporate. */
+  jobType: string
   periodType: PeriodType
   description: string
   statusId: KPIStatus

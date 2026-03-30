@@ -3,16 +3,12 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useForm } from "react-hook-form"
 import { useNavigate } from "react-router-dom"
 import { z } from "zod"
-import { BarChart3, FileText, CheckCircle2, Ship, Search, RotateCcw } from "lucide-react"
+import { BarChart3, FileText, CheckCircle2, Search, RotateCcw } from "lucide-react"
 
 import { toast } from "@/hooks/use-toast"
 import { useKPIStore } from "@/store/kpiStore"
 import type {
-  KPIItem,
   KPICategory,
-  BusinessScope,
-  ShipmentMode,
-  TradeDirection,
   UnitType,
   CalculationType,
   PeriodType,
@@ -28,20 +24,15 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  filterKpiImportLibrary,
+  KPI_IMPORT_LIBRARY_GROUPS,
+  type KPIImportEntry,
+} from "@/data/kpiImportLibrary"
 
-const categoryOptions = [
-  "delivery",
-  "operational",
-  "customer",
-  "financial",
-  "compliance",
-  "sustainability",
-  "capacity",
-] as const satisfies readonly KPICategory[]
-
-const shipmentModeOptions = ["sea", "air", "road", "rail", "multimodal", "courier"] as const satisfies readonly ShipmentMode[]
-const tradeDirectionOptions = ["import", "export", "cross-trade", "import-clearance", "export-clearance"] as const satisfies readonly TradeDirection[]
+/** Stored on every new KPI item; category is no longer collected on this form. */
+const DEFAULT_KPI_CATEGORY: KPICategory = "operational"
 
 const unitTypeValues = ["currency", "number"] as const satisfies readonly UnitType[]
 const unitTypeOptions = [
@@ -62,11 +53,6 @@ const roleOptions = [
   "senior-mgmt",
   "branch-head",
 ] as const satisfies readonly UserRole[]
-const businessScopeOptions = ["freight", "corporate"] as const satisfies readonly BusinessScope[]
-
-const jobTypeOptions = ["All", "FCL", "LCL", "Breakbulk", "Project Cargo", "Reefer", "Hazmat"] as const
-const regionScopeOptions = ["Global", "UAE", "Saudi Arabia", "Qatar", "Kuwait", "Oman", "Bahrain", "India"] as const
-
 const thresholdSchema = z.object({
   min: z.number(),
   max: z.number(),
@@ -77,14 +63,7 @@ const kpiItemSchema = z
     definitionName: z.string().min(3, "Definition name is required"),
     kpiCode: z.string().min(3, "KPI code is required"),
     itemName: z.string().optional(),
-    category: z.enum(categoryOptions),
     description: z.string().min(5, "Description is required"),
-    businessScope: z.enum(businessScopeOptions),
-
-    shipmentModes: z.array(z.enum(shipmentModeOptions)),
-    tradeDirections: z.array(z.enum(tradeDirectionOptions)),
-    jobType: z.enum(jobTypeOptions),
-    regionScope: z.enum(regionScopeOptions),
 
     unitType: z.enum(unitTypeValues),
     calculationType: z.enum(calculationTypeOptions),
@@ -110,22 +89,6 @@ const kpiItemSchema = z
     weight: z.number().min(0).max(100),
   })
   .superRefine((data, ctx) => {
-    if (data.businessScope === "freight") {
-      if (data.shipmentModes.length < 1) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Select at least one shipment mode",
-          path: ["shipmentModes"],
-        })
-      }
-      if (data.tradeDirections.length < 1) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Select at least one trade direction",
-          path: ["tradeDirections"],
-        })
-      }
-    }
     if (data.thresholds.green.min >= data.thresholds.green.max) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -151,14 +114,10 @@ const kpiItemSchema = z
 
 type FormData = z.infer<typeof kpiItemSchema>
 
-type PillOption<T extends string> = {
-  value: T
-  label: string
-  color: {
-    border: string
-    bg: string
-    text: string
-  }
+/** Legacy KPI item drafts may include removed scope fields; drop them before reset. */
+function stripDraftLegacyFields(raw: Record<string, unknown>): Partial<FormData> {
+  const { businessScope: _b, shipmentModes: _s, tradeDirections: _t, jobType: _j, regionScope: _r, category: _c, ...rest } = raw
+  return rest as Partial<FormData>
 }
 
 function normalizeKpiCode(raw: string) {
@@ -203,42 +162,6 @@ function smartGeneratedCode(definitionName: string, category: KPICategory): stri
   const prefix = categoryPrefix(category)
   if (!short) return `${prefix}-`
   return `${prefix}-${short}`
-}
-
-function MultiPillSelect<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T[]
-  options: PillOption<T>[]
-  onChange: (next: T[]) => void
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {options.map((opt) => {
-        const selected = value.includes(opt.value)
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            className={cn(
-              "inline-flex items-center rounded-full border px-3 py-1 text-sm transition-colors",
-              selected
-                ? `border-none ${opt.color.bg} ${opt.color.text}`
-                : `border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100`,
-            )}
-            onClick={() => {
-              if (selected) onChange(value.filter((v) => v !== opt.value))
-              else onChange([...value, opt.value])
-            }}
-          >
-            {opt.label}
-          </button>
-        )
-      })}
-    </div>
-  )
 }
 
 function StepCircle({ state, index }: { state: "completed" | "active" | "pending"; index: number }) {
@@ -296,14 +219,7 @@ export default function KPIItemForm() {
     definitionName: "",
     kpiCode: "",
     itemName: undefined,
-    category: "delivery",
     description: "",
-    businessScope: "freight",
-
-    shipmentModes: ["sea"],
-    tradeDirections: ["import"],
-    jobType: "All",
-    regionScope: "Global",
 
     unitType: "currency",
     calculationType: "auto",
@@ -337,13 +253,7 @@ export default function KPIItemForm() {
 
   const { watch, setValue, handleSubmit, control } = form
   const allValues = watch()
-  const watchedCategory = watch("category")
   const watchedDefinition = watch("definitionName")
-  const watchedBusinessScope = watch("businessScope")
-  const watchedShipmentModes = watch("shipmentModes")
-  const watchedTradeDirections = watch("tradeDirections")
-  const watchedJobType = watch("jobType")
-  const watchedRegionScope = watch("regionScope")
 
   const [activeStep, setActiveStep] = useState<number>(0)
   const [manualCodeMode, setManualCodeMode] = useState(false)
@@ -352,7 +262,7 @@ export default function KPIItemForm() {
   const [draftBannerOpen, setDraftBannerOpen] = useState(false)
   const [pendingDraft, setPendingDraft] = useState<FormData | null>(null)
 
-  const sectionByStepRef = useRef<(HTMLElement | null)[]>([null, null, null])
+  const sectionByStepRef = useRef<(HTMLElement | null)[]>([null, null])
   const DRAFT_KEY = "kpi-form-draft"
 
   useEffect(() => {
@@ -383,36 +293,16 @@ export default function KPIItemForm() {
 
   useEffect(() => {
     if (manualCodeMode) return
-    const generated = smartGeneratedCode(watchedDefinition ?? "", watchedCategory)
+    const generated = smartGeneratedCode(watchedDefinition ?? "", DEFAULT_KPI_CATEGORY)
     setValue("kpiCode", normalizeKpiCode(generated), { shouldValidate: true })
-  }, [manualCodeMode, setValue, watchedCategory, watchedDefinition])
-
-  useEffect(() => {
-    if (watchedBusinessScope === "corporate") {
-      if ((watchedShipmentModes ?? []).length > 0) {
-        setValue("shipmentModes", [], { shouldValidate: true })
-      }
-      if ((watchedTradeDirections ?? []).length > 0) {
-        setValue("tradeDirections", [], { shouldValidate: true })
-      }
-      if (watchedJobType !== "All") {
-        setValue("jobType", "All", { shouldValidate: true })
-      }
-      if (watchedRegionScope !== "Global") {
-        setValue("regionScope", "Global", { shouldValidate: true })
-      }
-      return
-    }
-    if ((watchedShipmentModes ?? []).length === 0) setValue("shipmentModes", ["sea"], { shouldValidate: true })
-    if ((watchedTradeDirections ?? []).length === 0) setValue("tradeDirections", ["import"], { shouldValidate: true })
-  }, [setValue, watchedBusinessScope, watchedShipmentModes, watchedTradeDirections, watchedJobType, watchedRegionScope])
+  }, [manualCodeMode, setValue, watchedDefinition])
 
   useEffect(() => {
     const raw = localStorage.getItem(DRAFT_KEY)
     if (!raw) return
     try {
-      const parsed = JSON.parse(raw) as FormData
-      setPendingDraft(parsed)
+      const parsed = JSON.parse(raw) as Record<string, unknown>
+      setPendingDraft({ ...defaultValues, ...stripDraftLegacyFields(parsed) } as FormData)
       setDraftBannerOpen(true)
     } catch {
       localStorage.removeItem(DRAFT_KEY)
@@ -427,114 +317,32 @@ export default function KPIItemForm() {
   }, [allValues])
 
   const scrollToStep = (stepIdx: number) => {
-    const stepMap = [0, 2]
-    const section = sectionByStepRef.current[stepMap[stepIdx] ?? 0]
+    const section = sectionByStepRef.current[stepIdx]
     section?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
 
-  const shipmentPills = useMemo<PillOption<ShipmentMode>[]>(
-    () => [
-      {
-        value: "sea",
-        label: "Sea Freight",
-        color: { border: "border-orange-200", bg: "bg-orange-600", text: "text-white" },
-      },
-      {
-        value: "air",
-        label: "Air Freight",
-        color: { border: "border-purple-200", bg: "bg-purple-600", text: "text-white" },
-      },
-      {
-        value: "road",
-        label: "Road Freight",
-        color: { border: "border-amber-200", bg: "bg-amber-500", text: "text-black" },
-      },
-      {
-        value: "rail",
-        label: "Rail",
-        color: { border: "border-brand-teal/30", bg: "bg-brand-teal", text: "text-white" },
-      },
-      {
-        value: "multimodal",
-        label: "Multi-modal",
-        color: { border: "border-orange-200", bg: "bg-orange-500", text: "text-white" },
-      },
-      {
-        value: "courier",
-        label: "Courier",
-        color: { border: "border-green-200", bg: "bg-green-600", text: "text-white" },
-      },
-    ],
-    [],
+  const filteredLibrary = useMemo(
+    () => filterKpiImportLibrary(KPI_IMPORT_LIBRARY_GROUPS, libraryQuery),
+    [libraryQuery],
   )
 
-  const tradePills = useMemo<PillOption<TradeDirection>[]>(
-    () => [
-      { value: "import", label: "Import", color: { border: "border-brand-blue/30", bg: "bg-brand-blue", text: "text-white" } },
-      { value: "export", label: "Export", color: { border: "border-brand-blue/30", bg: "bg-brand-blue", text: "text-white" } },
-      {
-        value: "cross-trade",
-        label: "Cross Trade",
-        color: { border: "border-brand-blue/30", bg: "bg-brand-blue", text: "text-white" },
-      },
-      {
-        value: "import-clearance",
-        label: "Import Clearance",
-        color: { border: "border-brand-blue/30", bg: "bg-brand-blue", text: "text-white" },
-      },
-      {
-        value: "export-clearance",
-        label: "Export Clearance",
-        color: { border: "border-brand-blue/30", bg: "bg-brand-blue", text: "text-white" },
-      },
-    ],
-    [],
-  )
-
-  const kpiLibrary = useMemo(
-    () => [
-      { industry: "Financial", items: ["Revenue Growth %", "Gross Margin %", "EBITDA", "Cost per Unit", "Budget Variance %"] },
-      { industry: "Sales", items: ["Win Rate %", "Pipeline Coverage", "Quota Attainment %", "Avg Deal Size", "Sales Cycle Days"] },
-      { industry: "Operations", items: ["On-Time Delivery %", "Defect Rate %", "Cycle Time", "Capacity Utilisation %", "Downtime Hours"] },
-      { industry: "HR", items: ["Employee Turnover %", "Absenteeism Rate %", "Training Completion %", "eNPS Score", "Time to Hire Days"] },
-      { industry: "Customer", items: ["NPS Score", "CSAT %", "Customer Retention %", "First Response Time Hours", "Resolution Rate %"] },
-      { industry: "Quality", items: ["First Pass Yield %", "Return Rate %", "Audit Score", "Complaint Rate %", "SLA Compliance %"] },
-    ],
-    [],
-  )
-
-  const filteredLibrary = useMemo(() => {
-    const q = libraryQuery.trim().toLowerCase()
-    if (!q) return kpiLibrary
-    return kpiLibrary
-      .map((group) => ({ ...group, items: group.items.filter((item) => item.toLowerCase().includes(q)) }))
-      .filter((group) => group.items.length > 0)
-  }, [kpiLibrary, libraryQuery])
-
-  const fillFromLibrary = (label: string, industry: string) => {
-    const categoryMap: Record<string, KPICategory> = {
-      Financial: "financial",
-      Sales: "delivery",
-      Operations: "operational",
-      HR: "capacity",
-      Customer: "customer",
-      Quality: "compliance",
+  const fillFromLibrary = (entry: KPIImportEntry) => {
+    setValue("definitionName", entry.definitionName, { shouldValidate: true })
+    setValue("itemName", entry.name, { shouldValidate: true })
+    setValue("description", entry.description, { shouldValidate: true })
+    setValue("unitType", entry.unitType, { shouldValidate: true })
+    setValue("calculationType", entry.calculationType, { shouldValidate: true })
+    setValue("periodType", entry.periodType, { shouldValidate: true })
+    setValue("dataSource", entry.dataSource, { shouldValidate: true })
+    setValue("visibleRoles", entry.visibleRoles, { shouldValidate: true })
+    setValue("aggregation", entry.aggregation, { shouldValidate: true })
+    setValue("trendDirection", entry.trendDirection, { shouldValidate: true })
+    if (entry.suggestedKpiCode) {
+      setManualCodeMode(true)
+      setValue("kpiCode", normalizeKpiCode(entry.suggestedKpiCode), { shouldValidate: true })
+    } else {
+      setManualCodeMode(false)
     }
-    const lowerLabel = label.toLowerCase()
-    const unitType: (typeof unitTypeValues)[number] =
-      lowerLabel.includes("revenue") || lowerLabel.includes("amount") || lowerLabel.includes("cost") || lowerLabel.includes("currency")
-        ? "currency"
-        : "number"
-
-    setValue("definitionName", label, { shouldValidate: true })
-    setValue("itemName", label, { shouldValidate: true })
-    setValue("category", categoryMap[industry] ?? "operational", { shouldValidate: true })
-    setValue("description", `${label} KPI imported from ${industry} library template.`, { shouldValidate: true })
-    setValue("unitType", unitType, { shouldValidate: true })
-    setValue("calculationType", "percentage", { shouldValidate: true })
-    setValue("dataSource", "BI Engine", { shouldValidate: true })
-    setValue("visibleRoles", ["ops-exec", "ops-mgr"], { shouldValidate: true })
-    setManualCodeMode(false)
     setLibraryOpen(false)
   }
 
@@ -545,13 +353,13 @@ export default function KPIItemForm() {
       definitionName: values.definitionName,
       kpiCode: values.kpiCode,
       itemName: values.itemName?.trim() ? values.itemName : values.definitionName,
-      category: values.category,
+      category: DEFAULT_KPI_CATEGORY,
       description: values.description,
-      businessScope: values.businessScope,
-      shipmentModes: values.businessScope === "corporate" ? [] : values.shipmentModes,
-      tradeDirections: values.businessScope === "corporate" ? [] : values.tradeDirections,
-      jobType: values.businessScope === "corporate" ? "All" : values.jobType,
-      regionScope: values.businessScope === "corporate" ? "Global" : values.regionScope,
+      businessScope: "freight",
+      shipmentModes: ["sea", "air", "road", "rail", "multimodal", "courier"],
+      tradeDirections: ["import", "export", "cross-trade", "import-clearance", "export-clearance"],
+      jobType: "All",
+      regionScope: "Global",
       unitType: values.unitType,
       calculationType: values.calculationType,
       periodType: values.periodType,
@@ -668,7 +476,7 @@ export default function KPIItemForm() {
                             const next = event.target.value
                             field.onChange(next)
                             if (!manualCodeMode) {
-                              const nextCode = smartGeneratedCode(next, watch("category"))
+                              const nextCode = smartGeneratedCode(next, DEFAULT_KPI_CATEGORY)
                               setValue("kpiCode", normalizeKpiCode(nextCode), { shouldValidate: true })
                             }
                           }}
@@ -701,62 +509,6 @@ export default function KPIItemForm() {
 
                 <FormField
                   control={control}
-                  name="category"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Category</FormLabel>
-                      <Select
-                        value={field.value}
-                        onValueChange={(val) => {
-                          field.onChange(val as KPIItem["category"])
-                          if (!manualCodeMode) {
-                            const nextCode = smartGeneratedCode(watch("definitionName"), val as KPICategory)
-                            setValue("kpiCode", normalizeKpiCode(nextCode), { shouldValidate: true })
-                          }
-                        }}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select category" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {categoryOptions.map((opt) => (
-                            <SelectItem key={opt} value={opt}>
-                              {opt}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={control}
-                  name="businessScope"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Business Scope</FormLabel>
-                      <Select value={field.value} onValueChange={(val) => field.onChange(val as BusinessScope)}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select business scope" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="freight">Freight Forwarding</SelectItem>
-                          <SelectItem value="corporate">Corporate (Non-Freight)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={control}
                   name="description"
                   render={({ field }) => (
                     <FormItem className="md:col-span-2">
@@ -772,119 +524,10 @@ export default function KPIItemForm() {
             </CardContent>
           </Card>
 
-          {/* SECTION 2 — Freight Scope */}
+          {/* SECTION 2 — Measurement */}
           <Card
             ref={(el) => {
               sectionByStepRef.current[1] = el
-            }}
-            data-step={0}
-          >
-            <CardHeader className="pb-5">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-brand-teal/10 text-brand-teal">
-                  <Ship className="h-5 w-5" />
-                </div>
-                <div>
-                  <CardTitle className="text-xl">{watchedBusinessScope === "corporate" ? "Corporate Scope" : "Freight Scope"}</CardTitle>
-                  <CardDescription>
-                    {watchedBusinessScope === "corporate"
-                      ? "Freight dimensions are not required for corporate KPIs."
-                      : "Select how this KPI applies across freight operations"}
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6 pt-0">
-              {watchedBusinessScope === "corporate" ? (
-                <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                  Corporate KPI selected. Shipment modes, trade directions, and freight job details are skipped.
-                </div>
-              ) : (
-                <>
-                  <FormField
-                    control={control}
-                    name="shipmentModes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Shipment Modes</FormLabel>
-                        <MultiPillSelect value={field.value} options={shipmentPills} onChange={field.onChange} />
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={control}
-                    name="tradeDirections"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Trade Directions</FormLabel>
-                        <MultiPillSelect value={field.value} options={tradePills} onChange={field.onChange} />
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                    <FormField
-                      control={control}
-                      name="jobType"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Equipment Type</FormLabel>
-                          <Select value={field.value} onValueChange={(val) => field.onChange(val as KPIItem["jobType"])} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select equipment type" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {jobTypeOptions.map((opt) => (
-                                <SelectItem key={opt} value={opt}>
-                                  {opt}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={control}
-                      name="regionScope"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Region Scope</FormLabel>
-                          <Select value={field.value} onValueChange={(val) => field.onChange(val as KPIItem["regionScope"])}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select region scope" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {regionScopeOptions.map((opt) => (
-                                <SelectItem key={opt} value={opt}>
-                                  {opt}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* SECTION 3 — Measurement */}
-          <Card
-            ref={(el) => {
-              sectionByStepRef.current[2] = el
             }}
             data-step={1}
           >
@@ -1135,6 +778,10 @@ export default function KPIItemForm() {
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Import KPI Definition from Library</DialogTitle>
+            <DialogDescription>
+              Pick a Vision Central Dubai product KPI or a core freight definition. Values match the seeded workbook and templates
+              (units, period, data source, roles, and suggested KPI codes).
+            </DialogDescription>
           </DialogHeader>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1145,20 +792,31 @@ export default function KPIItemForm() {
               placeholder="Search KPI definitions..."
             />
           </div>
-          <div className="max-h-[60vh] overflow-auto space-y-5 pr-1">
+          <div className="max-h-[60vh] overflow-auto space-y-6 pr-1">
+            {filteredLibrary.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">No definitions match your search.</p>
+            ) : null}
             {filteredLibrary.map((group) => (
-              <div key={group.industry} className="space-y-2">
-                <div className="text-sm font-semibold text-slate-700">{group.industry}</div>
+              <div key={group.id} className="space-y-2">
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">{group.title}</div>
+                  {group.subtitle ? (
+                    <div className="text-xs text-muted-foreground mt-0.5">{group.subtitle}</div>
+                  ) : null}
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {group.items.map((label) => (
+                  {group.entries.map((entry) => (
                     <button
-                      key={`${group.industry}-${label}`}
+                      key={entry.id}
                       type="button"
-                      className="rounded-lg border bg-white p-3 text-left hover:bg-slate-50"
-                      onClick={() => fillFromLibrary(label, group.industry)}
+                      className="rounded-lg border bg-white p-3 text-left transition-colors hover:bg-slate-50"
+                      onClick={() => fillFromLibrary(entry)}
                     >
-                      <div className="font-medium text-sm">{label}</div>
-                      <div className="text-xs text-muted-foreground mt-1">{group.industry} template</div>
+                      <div className="font-medium text-sm leading-snug">{entry.name}</div>
+                      <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{entry.description}</div>
+                      {entry.suggestedKpiCode ? (
+                        <div className="mt-1.5 font-mono text-[10px] text-brand-blue/90">{entry.suggestedKpiCode}</div>
+                      ) : null}
                     </button>
                   ))}
                 </div>

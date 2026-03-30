@@ -1,1021 +1,1068 @@
 -- =============================================================================
--- KPI Management System — MySQL 8.x physical data model
--- Derived from frontend: KPI/src/types/kpi.types.ts, forms, stores, PeriodTracker
--- Conventions: InnoDB, utf8mb4_unicode_ci, BIGINT surrogate keys, public uuid CHAR(36)
--- Multi-tenant: account_id, workspace_id, control_unit_id on all business tables
+-- KPI Management System — MySQL 8.x Physical Data Model
+-- Schema : c1s1_billing_crm_DEV_1_s4JNKRDR_dev
+-- Aligned with dev environment (verified via MCP 2026-03-30)
+--
+-- Conventions (matching dev platform):
+--   • Business entity PKs  : CHAR(36) UUID
+--   • Lookup / master PKs  : INT (auto-increment where applicable)
+--   • Timestamps            : timestamp DEFAULT CURRENT_TIMESTAMP
+--   • Multi-tenant cols     : account_id / workspace_id / control_unit_id CHAR(36)
+--   • Workflow state col    : per-table ENUM  (e.g. kpi_master_states_status)
+--   • created_by/updated_by : CHAR(36) (user UUID)
+--   • No FK to account/workspace (platform-managed, schema unknown here)
+--
+-- File structure:
+--   SECTION 1 — Existing platform tables (already in dev — reference only)
+--   SECTION 2 — KPI-specific lookup / master tables  (new, INT PK)
+--   SECTION 3 — Existing KPI tables (already in dev — exact structure)
+--   SECTION 4 — New KPI business tables (CHAR(36) PK, dev-aligned)
+--   SECTION 5 — Seed data
 -- =============================================================================
 
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
--- -----------------------------------------------------------------------------
--- Tenant & identity scaffolding (minimal; link to your IAM)
--- -----------------------------------------------------------------------------
+-- =============================================================================
+-- SECTION 1 : EXISTING PLATFORM TABLES
+-- These already exist in the dev schema.  Shown here so FK targets are
+-- documented and the file can be run safely with IF NOT EXISTS.
+-- DO NOT ALTER these definitions without checking the platform baseline.
+-- =============================================================================
 
-CREATE TABLE IF NOT EXISTS account (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  code            VARCHAR(64) NOT NULL,
-  name            VARCHAR(255) NOT NULL,
-  status          ENUM('active','inactive','suspended') NOT NULL DEFAULT 'active',
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  UNIQUE KEY uk_account_uuid (uuid),
-  UNIQUE KEY uk_account_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS workspace (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  code            VARCHAR(64) NOT NULL,
-  name            VARCHAR(255) NOT NULL,
-  status          ENUM('active','inactive') NOT NULL DEFAULT 'active',
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_workspace_uuid (uuid),
-  UNIQUE KEY uk_workspace_acct_code (account_id, code),
-  CONSTRAINT fk_workspace_account FOREIGN KEY (account_id) REFERENCES account(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
+-- Platform: control_unit
 CREATE TABLE IF NOT EXISTS control_unit (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  code            VARCHAR(64) NOT NULL,
-  name            VARCHAR(255) NOT NULL,
-  status          ENUM('active','inactive') NOT NULL DEFAULT 'active',
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_cu_uuid (uuid),
-  UNIQUE KEY uk_cu_ws_code (workspace_id, code),
-  CONSTRAINT fk_cu_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_cu_workspace FOREIGN KEY (workspace_id) REFERENCES workspace(id)
+  control_unit_id          CHAR(36)     NOT NULL,
+  control_unit_label       VARCHAR(255) NULL,
+  control_unit_level_id    CHAR(36)     NULL,
+  account_id               CHAR(36)     NULL,
+  workspace_id             CHAR(36)     NULL,
+  control_unit_name        VARCHAR(255) NULL,
+  control_unit_description VARCHAR(255) NULL,
+  parent_control_unit_id   CHAR(36)     NULL,
+  status_id                INT          NULL DEFAULT 1,
+  control_unit_code        CHAR(36)     NULL,
+  created_at               TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at               TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  created_by               CHAR(36)     NULL,
+  updated_by               VARCHAR(45)  NULL,
+  control_unit_type        VARCHAR(255) NULL,
+  base_currency_id         INT          NULL,
+  segment_tag_id           INT          NULL,
+  PRIMARY KEY (control_unit_id),
+  KEY idx_cu_parent (parent_control_unit_id),
+  KEY idx_cu_level  (control_unit_level_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- LOOKUP TABLES (seed-controlled; optional workspace overrides via code)
--- -----------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS ref_period_type (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(32) NOT NULL,
-  label           VARCHAR(64) NOT NULL,
-  sort_order      SMALLINT NOT NULL DEFAULT 0,
-  UNIQUE KEY uk_ref_period_type_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ref_distribution_type (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(32) NOT NULL,
-  label           VARCHAR(64) NOT NULL,
-  UNIQUE KEY uk_ref_dist_type_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ref_aggregation_type (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(32) NOT NULL,
-  label           VARCHAR(64) NOT NULL,
-  UNIQUE KEY uk_ref_agg_type_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ref_calculation_type (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(32) NOT NULL,
-  label           VARCHAR(64) NOT NULL,
-  UNIQUE KEY uk_ref_calc_type_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ref_kpi_status (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(32) NOT NULL,
-  label           VARCHAR(64) NOT NULL,
-  UNIQUE KEY uk_ref_kpi_status_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ref_approval_status (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(32) NOT NULL,
-  label           VARCHAR(64) NOT NULL,
-  UNIQUE KEY uk_ref_appr_status_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ref_trend_rag (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(16) NOT NULL,
-  label           VARCHAR(32) NOT NULL,
-  UNIQUE KEY uk_ref_trend_rag_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ref_unit_type (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(32) NOT NULL,
-  label           VARCHAR(64) NOT NULL,
-  UNIQUE KEY uk_ref_unit_type_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ref_shipment_mode (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(32) NOT NULL,
-  label           VARCHAR(64) NOT NULL,
-  UNIQUE KEY uk_ref_ship_mode_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ref_trade_direction (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(32) NOT NULL,
-  label           VARCHAR(64) NOT NULL,
-  UNIQUE KEY uk_ref_trade_dir_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ref_business_scope (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(32) NOT NULL,
-  label           VARCHAR(64) NOT NULL,
-  UNIQUE KEY uk_ref_biz_scope_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ref_hierarchy_level (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(32) NOT NULL,
-  label           VARCHAR(64) NOT NULL,
-  level_rank      SMALLINT NOT NULL DEFAULT 0,
-  UNIQUE KEY uk_ref_hlvl_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ref_user_role (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(32) NOT NULL,
-  label           VARCHAR(64) NOT NULL,
-  UNIQUE KEY uk_ref_user_role_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ref_allocation_status (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(32) NOT NULL,
-  label           VARCHAR(64) NOT NULL,
-  UNIQUE KEY uk_ref_alloc_status_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ref_subject_type (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(16) NOT NULL,
-  label           VARCHAR(32) NOT NULL,
-  UNIQUE KEY uk_ref_subject_type_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS ref_trend_direction (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(32) NOT NULL,
-  label           VARCHAR(64) NOT NULL,
-  UNIQUE KEY uk_ref_trend_dir_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Workflow state for actual figures (capture -> submit -> approve).
-CREATE TABLE IF NOT EXISTS ref_actual_entry_status (
-  id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  code            VARCHAR(32) NOT NULL,
-  label           VARCHAR(64) NOT NULL,
-  UNIQUE KEY uk_ref_actual_entry_st_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- -----------------------------------------------------------------------------
--- MASTER: categories, types, UOM (extensible per workspace)
--- -----------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS kpi_category (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  control_unit_id BIGINT UNSIGNED NULL,
-  code            VARCHAR(64) NOT NULL,
-  name            VARCHAR(255) NOT NULL,
-  description     VARCHAR(512) NULL,
-  status_id       SMALLINT UNSIGNED NOT NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_kpi_cat_uuid (uuid),
-  UNIQUE KEY uk_kpi_cat_ws_code (workspace_id, code),
-  CONSTRAINT fk_kpi_cat_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_kpi_cat_workspace FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_kpi_cat_cu FOREIGN KEY (control_unit_id) REFERENCES control_unit(id),
-  CONSTRAINT fk_kpi_cat_status FOREIGN KEY (status_id) REFERENCES ref_kpi_status(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS kpi_type (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  control_unit_id BIGINT UNSIGNED NULL,
-  code            VARCHAR(64) NOT NULL,
-  name            VARCHAR(255) NOT NULL,
-  description     VARCHAR(512) NULL,
-  status_id       SMALLINT UNSIGNED NOT NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_kpi_type_uuid (uuid),
-  UNIQUE KEY uk_kpi_type_ws_code (workspace_id, code),
-  CONSTRAINT fk_kpi_type_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_kpi_type_workspace FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_kpi_type_cu FOREIGN KEY (control_unit_id) REFERENCES control_unit(id),
-  CONSTRAINT fk_kpi_type_status FOREIGN KEY (status_id) REFERENCES ref_kpi_status(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS unit_of_measure (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  control_unit_id BIGINT UNSIGNED NULL,
-  code            VARCHAR(64) NOT NULL,
-  name            VARCHAR(255) NOT NULL,
-  ref_unit_type_id SMALLINT UNSIGNED NOT NULL,
-  display_symbol  VARCHAR(16) NULL,
-  decimals        TINYINT NOT NULL DEFAULT 2,
-  status_id       SMALLINT UNSIGNED NOT NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_uom_uuid (uuid),
-  UNIQUE KEY uk_uom_ws_code (workspace_id, code),
-  CONSTRAINT fk_uom_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_uom_workspace FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_uom_cu FOREIGN KEY (control_unit_id) REFERENCES control_unit(id),
-  CONSTRAINT fk_uom_ref_ut FOREIGN KEY (ref_unit_type_id) REFERENCES ref_unit_type(id),
-  CONSTRAINT fk_uom_status FOREIGN KEY (status_id) REFERENCES ref_kpi_status(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- -----------------------------------------------------------------------------
--- TIME DIMENSION (grain: calendar day; fiscal columns optional)
--- -----------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS dim_time (
-  time_key        INT UNSIGNED NOT NULL PRIMARY KEY,
-  calendar_date   DATE NOT NULL,
-  day_of_month    TINYINT UNSIGNED NOT NULL,
-  day_of_week     TINYINT UNSIGNED NOT NULL,
-  day_of_year     SMALLINT UNSIGNED NOT NULL,
-  week_of_year    TINYINT UNSIGNED NOT NULL,
-  iso_week        TINYINT UNSIGNED NOT NULL,
-  month_number    TINYINT UNSIGNED NOT NULL,
-  month_name      VARCHAR(16) NOT NULL,
-  quarter_number  TINYINT UNSIGNED NOT NULL,
-  quarter_key     INT UNSIGNED NOT NULL,
-  year_number     SMALLINT UNSIGNED NOT NULL,
-  fiscal_year     VARCHAR(32) NULL,
-  fiscal_year_key INT UNSIGNED NULL,
-  fiscal_quarter  TINYINT UNSIGNED NULL,
-  fiscal_month    TINYINT UNSIGNED NULL,
-  is_weekend      TINYINT(1) NOT NULL DEFAULT 0,
-  UNIQUE KEY uk_dim_time_date (calendar_date),
-  KEY idx_dim_time_yq (year_number, quarter_number),
-  KEY idx_dim_time_fy (fiscal_year_key)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- -----------------------------------------------------------------------------
--- Fiscal calendar (per workspace; supports FY 2025-26 style labels from UI)
--- -----------------------------------------------------------------------------
-
+-- Platform: fiscal_year
 CREATE TABLE IF NOT EXISTS fiscal_year (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  control_unit_id BIGINT UNSIGNED NULL,
-  label           VARCHAR(64) NOT NULL,
-  start_date      DATE NOT NULL,
-  end_date        DATE NOT NULL,
-  status_id       SMALLINT UNSIGNED NOT NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_fy_uuid (uuid),
-  UNIQUE KEY uk_fy_ws_label (workspace_id, label),
-  CONSTRAINT fk_fy_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_fy_workspace FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_fy_cu FOREIGN KEY (control_unit_id) REFERENCES control_unit(id),
-  CONSTRAINT fk_fy_status FOREIGN KEY (status_id) REFERENCES ref_kpi_status(id)
+  fiscal_year_id            CHAR(36)    NOT NULL,
+  account_id                CHAR(36)    NOT NULL,
+  workspace_id              CHAR(36)    NOT NULL,
+  control_unit_id           CHAR(36)    NOT NULL,
+  fiscal_year_code          VARCHAR(20) NOT NULL,
+  fiscal_year_name          VARCHAR(100) NOT NULL,
+  fiscal_year_number        INT         NOT NULL,
+  fiscal_year_start_date    DATE        NOT NULL,
+  fiscal_year_end_date      DATE        NOT NULL,
+  fiscal_template_id        CHAR(36)    NOT NULL,
+  is_closed                 TINYINT(1)  NOT NULL DEFAULT 0,
+  closed_at                 TIMESTAMP   NULL,
+  closed_by                 CHAR(36)    NULL,
+  status_id                 INT         NOT NULL DEFAULT 1,
+  is_current_fiscal_year    TINYINT(1)  NOT NULL DEFAULT 0,
+  opening_balance_posted    TINYINT(1)  NOT NULL DEFAULT 0,
+  closing_process_completed TINYINT(1)  NOT NULL DEFAULT 0,
+  audit_completed           TINYINT(1)  NOT NULL DEFAULT 0,
+  audit_completed_at        TIMESTAMP   NULL DEFAULT '0000-00-00 00:00:00',
+  has_adjustment_period     TINYINT(1)  NOT NULL DEFAULT 0,
+  created_at                TIMESTAMP   NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by                CHAR(36)    NOT NULL,
+  updated_at                TIMESTAMP   NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by                CHAR(36)    NOT NULL,
+  PRIMARY KEY (fiscal_year_id),
+  KEY idx_fy_cu       (control_unit_id),
+  KEY idx_fy_template (fiscal_template_id),
+  KEY idx_fy_status   (status_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- Organization hierarchy (TemplateAllocation / HierarchyTree)
--- -----------------------------------------------------------------------------
+-- Platform: fiscal_periods
+CREATE TABLE IF NOT EXISTS fiscal_periods (
+  period_id                      CHAR(36)    NOT NULL,
+  account_id                     CHAR(36)    NOT NULL,
+  workspace_id                   CHAR(36)    NOT NULL,
+  control_unit_id                CHAR(36)    NOT NULL,
+  fiscal_year_id                 CHAR(36)    NOT NULL,
+  parent_period_id               CHAR(36)    NULL,
+  period_name                    VARCHAR(50) NOT NULL,
+  period_code                    VARCHAR(50) NOT NULL,
+  period_sequence_number         INT         NOT NULL,
+  period_type_id                 INT         NOT NULL,
+  start_date                     DATE        NOT NULL,
+  end_date                       DATE        NOT NULL,
+  quarter_number                 INT         NULL,
+  month_number                   INT         NULL,
+  is_adjustment_period           TINYINT(1)  NOT NULL DEFAULT 0,
+  is_current                     TINYINT(1)  NOT NULL DEFAULT 0,
+  status_id                      INT         NOT NULL,
+  period_state_id                INT         NULL DEFAULT 1,
+  created_at                     TIMESTAMP   NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by                     CHAR(36)    NOT NULL,
+  updated_at                     TIMESTAMP   NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by                     CHAR(36)    NOT NULL,
+  fiscal_periods_workflow_status ENUM('draft','open','closed','locked','reopen') NULL DEFAULT 'draft',
+  PRIMARY KEY (period_id),
+  KEY idx_fp_fy     (fiscal_year_id),
+  KEY idx_fp_pt     (period_type_id),
+  KEY idx_fp_status (status_id),
+  KEY idx_fp_state  (period_state_id),
+  CONSTRAINT fk_fp_fy FOREIGN KEY (fiscal_year_id) REFERENCES fiscal_year(fiscal_year_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS org_hierarchy_node (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  control_unit_id BIGINT UNSIGNED NULL,
-  parent_id       BIGINT UNSIGNED NULL,
+-- Platform: period_type
+CREATE TABLE IF NOT EXISTS period_type (
+  period_type_id   INT         NOT NULL AUTO_INCREMENT,
+  period_type_name VARCHAR(50) NOT NULL,
+  PRIMARY KEY (period_type_id),
+  UNIQUE KEY uk_period_type_name (period_type_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Platform: time_dimension
+CREATE TABLE IF NOT EXISTS time_dimension (
+  date_id            INT         NOT NULL AUTO_INCREMENT,
+  date               DATE        NOT NULL,
+  day_name           VARCHAR(10) NOT NULL,
+  day_of_week        INT         NOT NULL,
+  day_of_month       INT         NOT NULL,
+  day_of_year        INT         NOT NULL,
+  week_in_year       INT         NOT NULL,
+  week_in_month      INT         NOT NULL,
+  week_start_date    DATE        NOT NULL,
+  week_end_date      DATE        NOT NULL,
+  month              INT         NOT NULL,
+  month_name         VARCHAR(10) NOT NULL,
+  month_start_date   DATE        NOT NULL,
+  month_end_date     DATE        NOT NULL,
+  days_in_month      INT         NOT NULL,
+  quarter            INT         NOT NULL,
+  quarter_name       VARCHAR(10) NOT NULL,
+  quarter_start_date DATE        NOT NULL,
+  quarter_end_date   DATE        NOT NULL,
+  year               INT         NOT NULL,
+  year_start_date    DATE        NOT NULL,
+  year_end_date      DATE        NOT NULL,
+  days_in_year       INT         NOT NULL,
+  is_leap_year       TINYINT     NOT NULL,
+  is_month_start     TINYINT     NOT NULL,
+  is_month_end       TINYINT     NOT NULL,
+  is_quarter_start   TINYINT     NOT NULL,
+  is_quarter_end     TINYINT     NOT NULL,
+  is_year_start      TINYINT     NOT NULL,
+  is_year_end        TINYINT     NOT NULL,
+  created_at         TIMESTAMP   NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at         TIMESTAMP   NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (date_id),
+  UNIQUE KEY uk_td_date (date),
+  KEY idx_td_week (week_in_year),
+  KEY idx_td_year (year)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Platform: department
+CREATE TABLE IF NOT EXISTS department (
+  department_id          CHAR(36)    NOT NULL,
+  department_name        VARCHAR(20) NOT NULL,
+  department_description TEXT        NULL,
+  department_code        VARCHAR(20) NULL,
+  status_id              INT         NULL DEFAULT 1,
+  company_id             CHAR(36)    NOT NULL,
+  account_id             CHAR(36)    NOT NULL,
+  workspace_id           CHAR(36)    NOT NULL,
+  control_unit_id        CHAR(36)    NULL,
+  created_by             CHAR(36)    NULL,
+  created_time           TIMESTAMP   NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_by             CHAR(36)    NULL,
+  updated_at             TIMESTAMP   NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  department_category_id INT         NULL,
+  department_category    VARCHAR(45) NULL,
+  PRIMARY KEY (department_id),
+  KEY idx_dept_company (company_id),
+  KEY idx_dept_cu      (control_unit_id),
+  KEY idx_dept_status  (status_id),
+  KEY idx_dept_cat     (department_category_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Platform: target_status_master
+CREATE TABLE IF NOT EXISTS target_status_master (
+  target_status_id   INT          NOT NULL,
+  target_status_name VARCHAR(255) NOT NULL,
+  PRIMARY KEY (target_status_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Platform: plan_status_master
+CREATE TABLE IF NOT EXISTS plan_status_master (
+  plan_status_id   INT          NOT NULL,
+  plan_status_name VARCHAR(255) NOT NULL,
+  PRIMARY KEY (plan_status_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================================================
+-- SECTION 2 : KPI-SPECIFIC LOOKUP / REFERENCE TABLES
+-- New tables not in the existing platform schema.
+-- Convention: INT AUTO_INCREMENT primary key (matches platform lookup pattern).
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS kpi_aggregation_type_master (
+  id    INT         NOT NULL AUTO_INCREMENT,
+  code  VARCHAR(32) NOT NULL,
+  label VARCHAR(64) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_kagg_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS kpi_calculation_type_master (
+  id    INT         NOT NULL AUTO_INCREMENT,
+  code  VARCHAR(32) NOT NULL,
+  label VARCHAR(64) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_kcalct_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS kpi_distribution_type_master (
+  id    INT         NOT NULL AUTO_INCREMENT,
+  code  VARCHAR(32) NOT NULL,
+  label VARCHAR(64) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_kdist_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS kpi_rag_master (
+  id    INT         NOT NULL AUTO_INCREMENT,
+  code  VARCHAR(16) NOT NULL,
+  label VARCHAR(32) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_krag_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS kpi_unit_type_master (
+  id    INT         NOT NULL AUTO_INCREMENT,
+  code  VARCHAR(32) NOT NULL,
+  label VARCHAR(64) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_kut_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS kpi_trend_direction_master (
+  id    INT         NOT NULL AUTO_INCREMENT,
+  code  VARCHAR(32) NOT NULL,
+  label VARCHAR(64) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_ktd_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS kpi_shipment_mode_master (
+  id    INT         NOT NULL AUTO_INCREMENT,
+  code  VARCHAR(32) NOT NULL,
+  label VARCHAR(64) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_ksm_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS kpi_trade_direction_master (
+  id    INT         NOT NULL AUTO_INCREMENT,
+  code  VARCHAR(32) NOT NULL,
+  label VARCHAR(64) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_ktrade_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS kpi_business_scope_master (
+  id    INT         NOT NULL AUTO_INCREMENT,
+  code  VARCHAR(32) NOT NULL,
+  label VARCHAR(64) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_kbiz_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS kpi_hierarchy_level_master (
+  id         INT         NOT NULL AUTO_INCREMENT,
+  code       VARCHAR(32) NOT NULL,
+  label      VARCHAR(64) NOT NULL,
+  level_rank SMALLINT    NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_khl_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS kpi_approval_status_master (
+  id    INT         NOT NULL AUTO_INCREMENT,
+  code  VARCHAR(32) NOT NULL,
+  label VARCHAR(64) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_kappr_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS kpi_allocation_status_master (
+  id    INT         NOT NULL AUTO_INCREMENT,
+  code  VARCHAR(32) NOT NULL,
+  label VARCHAR(64) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_kalloc_st_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS kpi_subject_type_master (
+  id    INT         NOT NULL AUTO_INCREMENT,
+  code  VARCHAR(16) NOT NULL,
+  label VARCHAR(32) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_ksubj_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS kpi_actual_entry_status_master (
+  id    INT         NOT NULL AUTO_INCREMENT,
+  code  VARCHAR(32) NOT NULL,
+  label VARCHAR(64) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_kaes_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================================================
+-- SECTION 3 : EXISTING KPI TABLES  (already in dev — exact structure)
+-- =============================================================================
+
+-- KPI Type Master
+-- PK: INT (not auto-increment in dev; values are managed externally)
+CREATE TABLE IF NOT EXISTS KPI_type_master (
+  kpi_type_id          INT          NOT NULL,
+  kpi_type_code        CHAR(36)     NOT NULL,
+  kpi_type_name        VARCHAR(255) NOT NULL,
+  kpi_type_description TEXT         NULL,
+  status_id            INT          NULL,
+  created_at           TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by           CHAR(36)     NULL,
+  updated_at           TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by           CHAR(36)     NULL,
+  PRIMARY KEY (kpi_type_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- KPI Master
+-- PK: INT AUTO_INCREMENT (existing dev convention for this table)
+-- Workflow state: kpi_master_states_status ENUM
+CREATE TABLE IF NOT EXISTS KPI_master (
+  kpi_id                   INT         NOT NULL AUTO_INCREMENT,
+  account_id               CHAR(36)    NULL,
+  workspace_id             CHAR(36)    NULL,
+  control_unit_id          CHAR(36)    NULL,
+  kpi_type_id              INT         NULL,
+  department_id            CHAR(36)    NULL,
+  kpi_code                 VARCHAR(50) NULL,
+  kpi_name                 VARCHAR(255) NULL,
+  kpi_description          TEXT        NULL,
+  unit_of_measure          ENUM('Amount','Number') NULL,
+  calculation_type         ENUM('Manual','Auto')   NULL DEFAULT 'Manual',
+  status_id                INT         NULL,
+  created_at               TIMESTAMP   NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by               CHAR(36)    NULL,
+  updated_at               TIMESTAMP   NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by               CHAR(36)    NULL,
+  kpi_master_states_status ENUM('draft') NULL DEFAULT 'draft',
+  PRIMARY KEY (kpi_id),
+  KEY idx_km_kpi_type (kpi_type_id),
+  KEY idx_km_dept     (department_id),
+  CONSTRAINT fk_km_kpi_type FOREIGN KEY (kpi_type_id)   REFERENCES KPI_type_master(kpi_type_id),
+  CONSTRAINT fk_km_dept     FOREIGN KEY (department_id)  REFERENCES department(department_id),
+  CONSTRAINT fk_km_cu       FOREIGN KEY (control_unit_id) REFERENCES control_unit(control_unit_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- KPI Year Plans  (plan header: employee × fiscal year)
+-- Equivalent of TemplateAllocation at the plan level.
+-- Workflow state: kpi_year_plan_master_states_status ENUM
+CREATE TABLE IF NOT EXISTS KPI_year_plans (
+  kpi_year_plan_id                   CHAR(36)    NOT NULL,
+  account_id                         CHAR(36)    NULL,
+  workspace_id                       CHAR(36)    NULL,
+  control_unit_id                    CHAR(36)    NULL,
+  employee_id                        CHAR(36)    NULL,
+  department_id                      CHAR(36)    NULL,
+  fiscal_year_id                     CHAR(36)    NULL,
+  plan_status_id                     INT         NULL,
+  is_locked                          TINYINT(1)  NULL DEFAULT 0,
+  submitted_at                       TIMESTAMP   NULL,
+  submitted_by                       CHAR(36)    NULL,
+  approved_at                        TIMESTAMP   NULL,
+  notes                              TEXT        NULL,
+  created_at                         TIMESTAMP   NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by                         CHAR(36)    NULL,
+  updated_at                         TIMESTAMP   NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by                         CHAR(36)    NULL,
+  kpi_year_plan_master_states_status ENUM('draft','submitted','approved','locked') NULL DEFAULT 'draft',
+  PRIMARY KEY (kpi_year_plan_id),
+  KEY idx_kyp_emp         (employee_id),
+  KEY idx_kyp_plan_status (plan_status_id),
+  CONSTRAINT fk_kyp_fy          FOREIGN KEY (fiscal_year_id) REFERENCES fiscal_year(fiscal_year_id),
+  CONSTRAINT fk_kyp_plan_status FOREIGN KEY (plan_status_id) REFERENCES plan_status_master(plan_status_id),
+  CONSTRAINT fk_kyp_cu          FOREIGN KEY (control_unit_id) REFERENCES control_unit(control_unit_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- KPI Targets  (annual target per KPI × year plan)
+-- Workflow state: kpi_target_states_status ENUM
+CREATE TABLE IF NOT EXISTS KPI_targets (
+  kpi_target_id            CHAR(36)      NOT NULL,
+  account_id               CHAR(36)      NULL,
+  workspace_id             CHAR(36)      NULL,
+  control_unit_id          CHAR(36)      NULL,
+  kpi_year_plan_id         CHAR(36)      NULL,
+  kpi_id                   INT           NULL,
+  employee_id              CHAR(36)      NULL,
+  fiscal_year_id           CHAR(36)      NULL,
+  annual_target_value      DECIMAL(18,2) NULL,
+  target_status_id         INT           NULL,
+  approved_at              TIMESTAMP     NULL,
+  approved_by              CHAR(36)      NULL,
+  is_locked                TINYINT(1)    NULL DEFAULT 0,
+  created_at               TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by               CHAR(36)      NULL,
+  updated_at               TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by               CHAR(36)      NULL,
+  kpi_target_states_status ENUM('draft','approved','locked') NULL DEFAULT 'draft',
+  PRIMARY KEY (kpi_target_id),
+  KEY idx_kt_kyp        (kpi_year_plan_id),
+  KEY idx_kt_kpi        (kpi_id),
+  KEY idx_kt_tgt_status (target_status_id),
+  CONSTRAINT fk_kt_kyp        FOREIGN KEY (kpi_year_plan_id) REFERENCES KPI_year_plans(kpi_year_plan_id) ON DELETE CASCADE,
+  CONSTRAINT fk_kt_kpi        FOREIGN KEY (kpi_id)           REFERENCES KPI_master(kpi_id),
+  CONSTRAINT fk_kt_tgt_status FOREIGN KEY (target_status_id) REFERENCES target_status_master(target_status_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- KPI Period Targets  (period-level target split per KPI target)
+CREATE TABLE IF NOT EXISTS KPI_period_targets (
+  kpi_period_target_id CHAR(36)      NOT NULL,
+  account_id           CHAR(36)      NULL,
+  workspace_id         CHAR(36)      NULL,
+  control_unit_id      CHAR(36)      NULL,
+  kpi_target_id        CHAR(36)      NULL,
+  period_id            CHAR(36)      NULL,
+  period_target_value  DECIMAL(18,2) NULL,
+  status_id            INT           NULL,
+  created_at           TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by           CHAR(36)      NULL,
+  updated_at           TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by           CHAR(36)      NULL,
+  PRIMARY KEY (kpi_period_target_id),
+  KEY idx_kpt_tgt    (kpi_target_id),
+  KEY idx_kpt_period (period_id),
+  CONSTRAINT fk_kpt_tgt    FOREIGN KEY (kpi_target_id) REFERENCES KPI_targets(kpi_target_id) ON DELETE CASCADE,
+  CONSTRAINT fk_kpt_period FOREIGN KEY (period_id)     REFERENCES fiscal_periods(period_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- KPI Period Actual  (actual value per period target)
+CREATE TABLE IF NOT EXISTS KPI_period_actual (
+  kpi_period_actual_id CHAR(36)      NOT NULL,
+  account_id           CHAR(36)      NULL,
+  workspace_id         CHAR(36)      NULL,
+  control_unit_id      CHAR(36)      NULL,
+  kpi_period_target_id CHAR(36)      NULL,
+  actual_value         DECIMAL(18,2) NULL,
+  calculated_on        DATE          NULL,
+  created_at           TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by           CHAR(36)      NULL,
+  updated_at           TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by           CHAR(36)      NULL,
+  PRIMARY KEY (kpi_period_actual_id),
+  KEY idx_kpa_pt (kpi_period_target_id),
+  CONSTRAINT fk_kpa_pt FOREIGN KEY (kpi_period_target_id) REFERENCES KPI_period_targets(kpi_period_target_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================================================
+-- SECTION 4 : NEW KPI BUSINESS TABLES
+-- Not yet in dev.  Follow dev conventions: CHAR(36) PK, timestamp cols,
+-- CHAR(36) for all entity FKs, INT for lookup FKs.
+-- Lowercase kpi_ prefix to distinguish from existing uppercase KPI_ tables.
+-- =============================================================================
+
+-- Unit of Measure (KPI-specific; separate from cs_unit_of_measure platform table)
+CREATE TABLE IF NOT EXISTS kpi_unit_of_measure (
+  uom_id          CHAR(36)     NOT NULL,
+  account_id      CHAR(36)     NOT NULL,
+  workspace_id    CHAR(36)     NOT NULL,
+  control_unit_id CHAR(36)     NULL,
+  code            VARCHAR(64)  NOT NULL,
   name            VARCHAR(255) NOT NULL,
-  hierarchy_level_id SMALLINT UNSIGNED NOT NULL,
-  region          VARCHAR(128) NULL,
-  allocation_status ENUM('allocated','partial','none') NOT NULL DEFAULT 'none',
-  external_ref    VARCHAR(128) NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_ohn_uuid (uuid),
-  KEY idx_ohn_parent (parent_id),
-  KEY idx_ohn_ws (workspace_id),
-  CONSTRAINT fk_ohn_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_ohn_workspace FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_ohn_cu FOREIGN KEY (control_unit_id) REFERENCES control_unit(id),
-  CONSTRAINT fk_ohn_parent FOREIGN KEY (parent_id) REFERENCES org_hierarchy_node(id),
-  CONSTRAINT fk_ohn_level FOREIGN KEY (hierarchy_level_id) REFERENCES ref_hierarchy_level(id)
+  unit_type_id    INT          NOT NULL,
+  display_symbol  VARCHAR(16)  NULL,
+  decimals        TINYINT      NOT NULL DEFAULT 2,
+  status_id       INT          NULL DEFAULT 1,
+  created_at      TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by      CHAR(36)     NULL,
+  updated_at      TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by      CHAR(36)     NULL,
+  PRIMARY KEY (uom_id),
+  UNIQUE KEY uk_kuom_ws_code (workspace_id, code),
+  KEY idx_kuom_ut (unit_type_id),
+  CONSTRAINT fk_kuom_ut FOREIGN KEY (unit_type_id)   REFERENCES kpi_unit_type_master(id),
+  CONSTRAINT fk_kuom_cu FOREIGN KEY (control_unit_id) REFERENCES control_unit(control_unit_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- KPI Master (KPIItem)
--- -----------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS kpi_master (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  control_unit_id BIGINT UNSIGNED NULL,
-  definition_name VARCHAR(255) NOT NULL,
-  kpi_code        VARCHAR(64) NOT NULL,
-  item_name       VARCHAR(255) NOT NULL,
-  category_id     BIGINT UNSIGNED NOT NULL,
-  kpi_type_id     BIGINT UNSIGNED NULL,
-  description     TEXT NOT NULL,
-  business_scope_id SMALLINT UNSIGNED NULL,
-  job_type        VARCHAR(128) NOT NULL,
-  region_scope    VARCHAR(128) NOT NULL,
-  uom_id          BIGINT UNSIGNED NULL,
-  ref_unit_type_id SMALLINT UNSIGNED NOT NULL,
-  calculation_type_id SMALLINT UNSIGNED NOT NULL,
-  period_type_id  SMALLINT UNSIGNED NOT NULL,
-  aggregation_type_id SMALLINT UNSIGNED NOT NULL,
-  aggregation_label VARCHAR(64) NOT NULL,
-  trend_direction_id SMALLINT UNSIGNED NOT NULL,
-  data_source     VARCHAR(128) NOT NULL,
-  formula_text    TEXT NULL,
-  allow_carry_forward TINYINT(1) NOT NULL DEFAULT 0,
-  carry_forward_missing_value DECIMAL(24,8) NULL,
-  show_in_build_screen TINYINT(1) NOT NULL DEFAULT 1,
-  enable_alerts   TINYINT(1) NOT NULL DEFAULT 0,
-  weighted_scoring TINYINT(1) NOT NULL DEFAULT 0,
-  default_weight  DECIMAL(9,4) NOT NULL DEFAULT 0,
-  status_id       SMALLINT UNSIGNED NOT NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_kpi_master_uuid (uuid),
-  UNIQUE KEY uk_kpi_master_ws_code (workspace_id, kpi_code),
-  KEY idx_kpi_master_cat (category_id),
-  CONSTRAINT fk_kpi_master_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_kpi_master_workspace FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_kpi_master_cu FOREIGN KEY (control_unit_id) REFERENCES control_unit(id),
-  CONSTRAINT fk_kpi_master_category FOREIGN KEY (category_id) REFERENCES kpi_category(id),
-  CONSTRAINT fk_kpi_master_kpi_type FOREIGN KEY (kpi_type_id) REFERENCES kpi_type(id),
-  CONSTRAINT fk_kpi_master_biz_scope FOREIGN KEY (business_scope_id) REFERENCES ref_business_scope(id),
-  CONSTRAINT fk_kpi_master_uom FOREIGN KEY (uom_id) REFERENCES unit_of_measure(id),
-  CONSTRAINT fk_kpi_master_ref_ut FOREIGN KEY (ref_unit_type_id) REFERENCES ref_unit_type(id),
-  CONSTRAINT fk_kpi_master_calc FOREIGN KEY (calculation_type_id) REFERENCES ref_calculation_type(id),
-  CONSTRAINT fk_kpi_master_period FOREIGN KEY (period_type_id) REFERENCES ref_period_type(id),
-  CONSTRAINT fk_kpi_master_agg FOREIGN KEY (aggregation_type_id) REFERENCES ref_aggregation_type(id),
-  CONSTRAINT fk_kpi_master_trend_dir FOREIGN KEY (trend_direction_id) REFERENCES ref_trend_direction(id),
-  CONSTRAINT fk_kpi_master_status FOREIGN KEY (status_id) REFERENCES ref_kpi_status(id)
+-- KPI Master — Shipment Mode cross-reference
+CREATE TABLE IF NOT EXISTS kpi_master_shipment_mode_xref (
+  kpi_id           INT NOT NULL,
+  shipment_mode_id INT NOT NULL,
+  PRIMARY KEY (kpi_id, shipment_mode_id),
+  CONSTRAINT fk_kmsm_kpi  FOREIGN KEY (kpi_id)           REFERENCES KPI_master(kpi_id) ON DELETE CASCADE,
+  CONSTRAINT fk_kmsm_mode FOREIGN KEY (shipment_mode_id) REFERENCES kpi_shipment_mode_master(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS kpi_master_shipment_mode (
-  kpi_master_id   BIGINT UNSIGNED NOT NULL,
-  shipment_mode_id SMALLINT UNSIGNED NOT NULL,
-  PRIMARY KEY (kpi_master_id, shipment_mode_id),
-  CONSTRAINT fk_kmsm_kpi FOREIGN KEY (kpi_master_id) REFERENCES kpi_master(id) ON DELETE CASCADE,
-  CONSTRAINT fk_kmsm_mode FOREIGN KEY (shipment_mode_id) REFERENCES ref_shipment_mode(id)
+-- KPI Master — Trade Direction cross-reference
+CREATE TABLE IF NOT EXISTS kpi_master_trade_direction_xref (
+  kpi_id             INT NOT NULL,
+  trade_direction_id INT NOT NULL,
+  PRIMARY KEY (kpi_id, trade_direction_id),
+  CONSTRAINT fk_kmtd_kpi FOREIGN KEY (kpi_id)             REFERENCES KPI_master(kpi_id) ON DELETE CASCADE,
+  CONSTRAINT fk_kmtd_td  FOREIGN KEY (trade_direction_id) REFERENCES kpi_trade_direction_master(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS kpi_master_trade_direction (
-  kpi_master_id   BIGINT UNSIGNED NOT NULL,
-  trade_direction_id SMALLINT UNSIGNED NOT NULL,
-  PRIMARY KEY (kpi_master_id, trade_direction_id),
-  CONSTRAINT fk_kmtd_kpi FOREIGN KEY (kpi_master_id) REFERENCES kpi_master(id) ON DELETE CASCADE,
-  CONSTRAINT fk_kmtd_td FOREIGN KEY (trade_direction_id) REFERENCES ref_trade_direction(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS kpi_master_visible_role (
-  kpi_master_id   BIGINT UNSIGNED NOT NULL,
-  user_role_id    SMALLINT UNSIGNED NOT NULL,
-  PRIMARY KEY (kpi_master_id, user_role_id),
-  CONSTRAINT fk_kmvr_kpi FOREIGN KEY (kpi_master_id) REFERENCES kpi_master(id) ON DELETE CASCADE,
-  CONSTRAINT fk_kmvr_role FOREIGN KEY (user_role_id) REFERENCES ref_user_role(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
+-- KPI Threshold (RAG bands per KPI)
 CREATE TABLE IF NOT EXISTS kpi_threshold (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  kpi_master_id   BIGINT UNSIGNED NOT NULL,
-  rag_id          SMALLINT UNSIGNED NOT NULL,
-  min_value       DECIMAL(24,8) NOT NULL,
-  max_value       DECIMAL(24,8) NOT NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_kpi_threshold_kpi_rag (kpi_master_id, rag_id),
-  CONSTRAINT fk_kth_kpi FOREIGN KEY (kpi_master_id) REFERENCES kpi_master(id) ON DELETE CASCADE,
-  CONSTRAINT fk_kth_rag FOREIGN KEY (rag_id) REFERENCES ref_trend_rag(id)
+  threshold_id CHAR(36)      NOT NULL,
+  kpi_id       INT           NOT NULL,
+  rag_id       INT           NOT NULL,
+  min_value    DECIMAL(24,8) NOT NULL,
+  max_value    DECIMAL(24,8) NOT NULL,
+  created_at   TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by   CHAR(36)      NULL,
+  updated_at   TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by   CHAR(36)      NULL,
+  PRIMARY KEY (threshold_id),
+  UNIQUE KEY uk_kth_kpi_rag (kpi_id, rag_id),
+  CONSTRAINT fk_kth_kpi FOREIGN KEY (kpi_id) REFERENCES KPI_master(kpi_id) ON DELETE CASCADE,
+  CONSTRAINT fk_kth_rag FOREIGN KEY (rag_id) REFERENCES kpi_rag_master(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- KPI Hierarchy (parent–child KPI relationships)
 CREATE TABLE IF NOT EXISTS kpi_hierarchy (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  parent_kpi_id   BIGINT UNSIGNED NOT NULL,
-  child_kpi_id    BIGINT UNSIGNED NOT NULL,
-  sort_order      INT NOT NULL DEFAULT 0,
-  effective_from  DATE NULL,
-  effective_to    DATE NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_kpi_hier_par_ch (parent_kpi_id, child_kpi_id),
-  CONSTRAINT fk_khier_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_khier_ws FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_khier_parent FOREIGN KEY (parent_kpi_id) REFERENCES kpi_master(id) ON DELETE CASCADE,
-  CONSTRAINT fk_khier_child FOREIGN KEY (child_kpi_id) REFERENCES kpi_master(id) ON DELETE CASCADE
+  hierarchy_id   CHAR(36)  NOT NULL,
+  account_id     CHAR(36)  NOT NULL,
+  workspace_id   CHAR(36)  NOT NULL,
+  parent_kpi_id  INT       NOT NULL,
+  child_kpi_id   INT       NOT NULL,
+  sort_order     INT       NOT NULL DEFAULT 0,
+  effective_from DATE      NULL,
+  effective_to   DATE      NULL,
+  created_at     TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by     CHAR(36)  NULL,
+  PRIMARY KEY (hierarchy_id),
+  UNIQUE KEY uk_khier_par_ch (parent_kpi_id, child_kpi_id),
+  CONSTRAINT fk_khier_parent FOREIGN KEY (parent_kpi_id) REFERENCES KPI_master(kpi_id) ON DELETE CASCADE,
+  CONSTRAINT fk_khier_child  FOREIGN KEY (child_kpi_id)  REFERENCES KPI_master(kpi_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- KPI Calculation definition (formula / stored procedure per KPI)
 CREATE TABLE IF NOT EXISTS kpi_calculation (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  kpi_master_id   BIGINT UNSIGNED NOT NULL,
-  calculation_type_id SMALLINT UNSIGNED NOT NULL,
-  formula_expression TEXT NULL,
+  calculation_id        CHAR(36)     NOT NULL,
+  account_id            CHAR(36)     NOT NULL,
+  workspace_id          CHAR(36)     NOT NULL,
+  kpi_id                INT          NOT NULL,
+  calculation_type_id   INT          NOT NULL,
+  formula_expression    TEXT         NULL,
   stored_procedure_name VARCHAR(255) NULL,
-  engine_notes    VARCHAR(512) NULL,
-  status_id       SMALLINT UNSIGNED NOT NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_kcalc_uuid (uuid),
-  KEY idx_kcalc_kpi (kpi_master_id),
-  CONSTRAINT fk_kcalc_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_kcalc_ws FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_kcalc_kpi FOREIGN KEY (kpi_master_id) REFERENCES kpi_master(id) ON DELETE CASCADE,
-  CONSTRAINT fk_kcalc_type FOREIGN KEY (calculation_type_id) REFERENCES ref_calculation_type(id),
-  CONSTRAINT fk_kcalc_status FOREIGN KEY (status_id) REFERENCES ref_kpi_status(id)
+  engine_notes          VARCHAR(512) NULL,
+  status_id             INT          NULL DEFAULT 1,
+  created_at            TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by            CHAR(36)     NULL,
+  updated_at            TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by            CHAR(36)     NULL,
+  PRIMARY KEY (calculation_id),
+  KEY idx_kcalc_kpi (kpi_id),
+  CONSTRAINT fk_kcalc_kpi  FOREIGN KEY (kpi_id)              REFERENCES KPI_master(kpi_id) ON DELETE CASCADE,
+  CONSTRAINT fk_kcalc_type FOREIGN KEY (calculation_type_id) REFERENCES kpi_calculation_type_master(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- KPI Template (KPITemplate + lines)
--- -----------------------------------------------------------------------------
-
+-- KPI Template (scorecard template grouping multiple KPIs)
+-- Workflow state: kpi_template_workflow_status ENUM
 CREATE TABLE IF NOT EXISTS kpi_template (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  control_unit_id BIGINT UNSIGNED NULL,
-  template_name   VARCHAR(255) NOT NULL,
-  template_code   VARCHAR(64) NOT NULL,
-  category_label  VARCHAR(128) NOT NULL,
-  business_scope_id SMALLINT UNSIGNED NULL,
-  period_type_id  SMALLINT UNSIGNED NOT NULL,
-  description     TEXT NOT NULL,
-  status_id       SMALLINT UNSIGNED NOT NULL,
-  version_no      INT NOT NULL DEFAULT 1,
-  last_updated_at DATETIME(3) NULL,
-  last_updated_by BIGINT UNSIGNED NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_ktmpl_uuid (uuid),
+  template_id        CHAR(36)     NOT NULL,
+  account_id         CHAR(36)     NOT NULL,
+  workspace_id       CHAR(36)     NOT NULL,
+  control_unit_id    CHAR(36)     NULL,
+  template_name      VARCHAR(255) NOT NULL,
+  template_code      VARCHAR(64)  NOT NULL,
+  category_label     VARCHAR(128) NOT NULL,
+  business_scope_id  INT          NULL,
+  job_type           VARCHAR(64)  NOT NULL DEFAULT 'All' COMMENT 'Equipment/cargo scope: All, FCL, LCL, Air…',
+  period_type_id     INT          NOT NULL,
+  description        TEXT         NOT NULL,
+  status_id          INT          NULL DEFAULT 1,
+  version_no         INT          NOT NULL DEFAULT 1,
+  last_updated_at    TIMESTAMP    NULL,
+  last_updated_by    CHAR(36)     NULL,
+  created_at         TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by         CHAR(36)     NULL,
+  updated_at         TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by         CHAR(36)     NULL,
+  kpi_template_workflow_status ENUM('draft','active','archived') NULL DEFAULT 'draft',
+  PRIMARY KEY (template_id),
   UNIQUE KEY uk_ktmpl_ws_code (workspace_id, template_code),
-  CONSTRAINT fk_ktmpl_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_ktmpl_workspace FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_ktmpl_cu FOREIGN KEY (control_unit_id) REFERENCES control_unit(id),
-  CONSTRAINT fk_ktmpl_biz FOREIGN KEY (business_scope_id) REFERENCES ref_business_scope(id),
-  CONSTRAINT fk_ktmpl_period FOREIGN KEY (period_type_id) REFERENCES ref_period_type(id),
-  CONSTRAINT fk_ktmpl_status FOREIGN KEY (status_id) REFERENCES ref_kpi_status(id)
+  CONSTRAINT fk_ktmpl_cu     FOREIGN KEY (control_unit_id)   REFERENCES control_unit(control_unit_id),
+  CONSTRAINT fk_ktmpl_biz    FOREIGN KEY (business_scope_id) REFERENCES kpi_business_scope_master(id),
+  CONSTRAINT fk_ktmpl_period FOREIGN KEY (period_type_id)    REFERENCES period_type(period_type_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS kpi_template_applicable_role (
-  kpi_template_id BIGINT UNSIGNED NOT NULL,
-  user_role_id    SMALLINT UNSIGNED NOT NULL,
-  PRIMARY KEY (kpi_template_id, user_role_id),
-  CONSTRAINT fk_ktar_tmpl FOREIGN KEY (kpi_template_id) REFERENCES kpi_template(id) ON DELETE CASCADE,
-  CONSTRAINT fk_ktar_role FOREIGN KEY (user_role_id) REFERENCES ref_user_role(id)
+-- KPI Template — Applicable Role cross-reference
+-- Uses role_code string (matches es_service_role / app_role patterns in platform)
+CREATE TABLE IF NOT EXISTS kpi_template_applicable_role_xref (
+  template_id CHAR(36)    NOT NULL,
+  role_code   VARCHAR(64) NOT NULL,
+  PRIMARY KEY (template_id, role_code),
+  CONSTRAINT fk_ktar_tmpl FOREIGN KEY (template_id) REFERENCES kpi_template(template_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS kpi_template_shipment_mode (
-  kpi_template_id BIGINT UNSIGNED NOT NULL,
-  shipment_mode_id SMALLINT UNSIGNED NOT NULL,
-  PRIMARY KEY (kpi_template_id, shipment_mode_id),
-  CONSTRAINT fk_ktsm_tmpl FOREIGN KEY (kpi_template_id) REFERENCES kpi_template(id) ON DELETE CASCADE,
-  CONSTRAINT fk_ktsm_mode FOREIGN KEY (shipment_mode_id) REFERENCES ref_shipment_mode(id)
+-- KPI Template — Shipment Mode cross-reference
+CREATE TABLE IF NOT EXISTS kpi_template_shipment_mode_xref (
+  template_id      CHAR(36) NOT NULL,
+  shipment_mode_id INT      NOT NULL,
+  PRIMARY KEY (template_id, shipment_mode_id),
+  CONSTRAINT fk_ktsm_tmpl FOREIGN KEY (template_id)      REFERENCES kpi_template(template_id) ON DELETE CASCADE,
+  CONSTRAINT fk_ktsm_mode FOREIGN KEY (shipment_mode_id) REFERENCES kpi_shipment_mode_master(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- KPI Template — Trade Direction cross-reference
+CREATE TABLE IF NOT EXISTS kpi_template_trade_direction_xref (
+  template_id        CHAR(36) NOT NULL,
+  trade_direction_id INT      NOT NULL,
+  PRIMARY KEY (template_id, trade_direction_id),
+  CONSTRAINT fk_kttd_tmpl FOREIGN KEY (template_id)        REFERENCES kpi_template(template_id) ON DELETE CASCADE,
+  CONSTRAINT fk_kttd_td   FOREIGN KEY (trade_direction_id) REFERENCES kpi_trade_direction_master(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- KPI Template Lines (KPIs included in a template with weights)
 CREATE TABLE IF NOT EXISTS kpi_template_line (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  kpi_template_id BIGINT UNSIGNED NOT NULL,
-  kpi_master_id   BIGINT UNSIGNED NOT NULL,
-  kpi_code_snapshot VARCHAR(64) NOT NULL,
+  line_id           CHAR(36)     NOT NULL,
+  template_id       CHAR(36)     NOT NULL,
+  kpi_id            INT          NOT NULL,
+  kpi_code_snapshot VARCHAR(64)  NOT NULL,
   kpi_name_snapshot VARCHAR(255) NOT NULL,
-  ref_unit_type_id SMALLINT UNSIGNED NOT NULL,
-  weight_pct      DECIMAL(9,4) NOT NULL,
-  display_order   INT NOT NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_kt_line_tmpl_kpi (kpi_template_id, kpi_master_id),
-  KEY idx_kt_line_tmpl (kpi_template_id),
-  CONSTRAINT fk_kt_line_tmpl FOREIGN KEY (kpi_template_id) REFERENCES kpi_template(id) ON DELETE CASCADE,
-  CONSTRAINT fk_kt_line_kpi FOREIGN KEY (kpi_master_id) REFERENCES kpi_master(id),
-  CONSTRAINT fk_kt_line_ut FOREIGN KEY (ref_unit_type_id) REFERENCES ref_unit_type(id)
+  unit_type_id      INT          NOT NULL,
+  weight_pct        DECIMAL(9,4) NOT NULL,
+  display_order     INT          NOT NULL,
+  created_at        TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by        CHAR(36)     NULL,
+  updated_at        TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by        CHAR(36)     NULL,
+  PRIMARY KEY (line_id),
+  UNIQUE KEY uk_ktl_tmpl_kpi (template_id, kpi_id),
+  KEY idx_ktl_tmpl (template_id),
+  CONSTRAINT fk_ktl_tmpl FOREIGN KEY (template_id) REFERENCES kpi_template(template_id) ON DELETE CASCADE,
+  CONSTRAINT fk_ktl_kpi  FOREIGN KEY (kpi_id)      REFERENCES KPI_master(kpi_id),
+  CONSTRAINT fk_ktl_ut   FOREIGN KEY (unit_type_id) REFERENCES kpi_unit_type_master(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- KPI Template Changelog
 CREATE TABLE IF NOT EXISTS kpi_template_changelog (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  kpi_template_id BIGINT UNSIGNED NOT NULL,
-  version_no      INT NOT NULL,
-  changed_at      DATETIME(3) NOT NULL,
-  changed_by      BIGINT UNSIGNED NULL,
-  change_summary  TEXT NOT NULL,
-  KEY idx_kt_chlog_tmpl (kpi_template_id),
-  CONSTRAINT fk_kt_chlog_tmpl FOREIGN KEY (kpi_template_id) REFERENCES kpi_template(id) ON DELETE CASCADE
+  changelog_id   CHAR(36)  NOT NULL,
+  template_id    CHAR(36)  NOT NULL,
+  version_no     INT       NOT NULL,
+  changed_at     TIMESTAMP NOT NULL,
+  changed_by     CHAR(36)  NULL,
+  change_summary TEXT      NOT NULL,
+  PRIMARY KEY (changelog_id),
+  KEY idx_ktcl_tmpl (template_id),
+  CONSTRAINT fk_ktcl_tmpl FOREIGN KEY (template_id) REFERENCES kpi_template(template_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- Allocation subject (individual vs team — frontend allocatedTo + type)
--- -----------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS subject_party (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  subject_type_id SMALLINT UNSIGNED NOT NULL,
-  display_name    VARCHAR(255) NOT NULL,
-  employee_ref    VARCHAR(64) NULL,
-  team_ref        VARCHAR(64) NULL,
-  org_node_id     BIGINT UNSIGNED NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_sp_uuid (uuid),
-  KEY idx_sp_ws_name (workspace_id, display_name),
-  CONSTRAINT fk_sp_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_sp_ws FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_sp_stype FOREIGN KEY (subject_type_id) REFERENCES ref_subject_type(id),
-  CONSTRAINT fk_sp_org FOREIGN KEY (org_node_id) REFERENCES org_hierarchy_node(id)
+-- Subject Party (individual or team used as allocation target)
+CREATE TABLE IF NOT EXISTS kpi_subject_party (
+  subject_party_id CHAR(36)     NOT NULL,
+  account_id       CHAR(36)     NOT NULL,
+  workspace_id     CHAR(36)     NOT NULL,
+  subject_type_id  INT          NOT NULL,
+  display_name     VARCHAR(255) NOT NULL,
+  employee_ref     VARCHAR(64)  NULL,
+  team_ref         VARCHAR(64)  NULL,
+  control_unit_id  CHAR(36)     NULL,
+  created_at       TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by       CHAR(36)     NULL,
+  updated_at       TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by       CHAR(36)     NULL,
+  PRIMARY KEY (subject_party_id),
+  KEY idx_ksp_ws (workspace_id),
+  CONSTRAINT fk_ksp_stype FOREIGN KEY (subject_type_id)  REFERENCES kpi_subject_type_master(id),
+  CONSTRAINT fk_ksp_cu    FOREIGN KEY (control_unit_id)  REFERENCES control_unit(control_unit_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- KPI Target header: one row per template × subject × fiscal year (TemplateAllocation)
--- -----------------------------------------------------------------------------
+-- Organisation Hierarchy Node (for template allocation hierarchy tree UI)
+CREATE TABLE IF NOT EXISTS kpi_org_hierarchy_node (
+  node_id            CHAR(36)     NOT NULL,
+  account_id         CHAR(36)     NOT NULL,
+  workspace_id       CHAR(36)     NOT NULL,
+  control_unit_id    CHAR(36)     NULL,
+  parent_node_id     CHAR(36)     NULL,
+  node_name          VARCHAR(255) NOT NULL,
+  hierarchy_level_id INT          NOT NULL,
+  region             VARCHAR(128) NULL,
+  allocation_status  ENUM('allocated','partial','none') NOT NULL DEFAULT 'none',
+  external_ref       VARCHAR(128) NULL,
+  created_at         TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by         CHAR(36)     NULL,
+  updated_at         TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by         CHAR(36)     NULL,
+  PRIMARY KEY (node_id),
+  KEY idx_kohn_parent (parent_node_id),
+  KEY idx_kohn_ws     (workspace_id),
+  CONSTRAINT fk_kohn_cu     FOREIGN KEY (control_unit_id)    REFERENCES control_unit(control_unit_id),
+  CONSTRAINT fk_kohn_parent FOREIGN KEY (parent_node_id)     REFERENCES kpi_org_hierarchy_node(node_id),
+  CONSTRAINT fk_kohn_level  FOREIGN KEY (hierarchy_level_id) REFERENCES kpi_hierarchy_level_master(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- KPI Allocation (template × subject × fiscal year header)
+-- Extended complement to KPI_year_plans: links template + subject party + fiscal year.
+-- Workflow state: kpi_allocation_workflow_status ENUM
 CREATE TABLE IF NOT EXISTS kpi_allocation (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  control_unit_id BIGINT UNSIGNED NULL,
-  kpi_template_id BIGINT UNSIGNED NOT NULL,
-  fiscal_year_id  BIGINT UNSIGNED NOT NULL,
-  period_type_id  SMALLINT UNSIGNED NOT NULL,
-  subject_party_id BIGINT UNSIGNED NOT NULL,
-  hierarchy_level_id SMALLINT UNSIGNED NOT NULL,
-  allocated_label VARCHAR(255) NOT NULL,
-  status_id       SMALLINT UNSIGNED NOT NULL,
-  approval_status_id SMALLINT UNSIGNED NOT NULL DEFAULT 1,
-  is_locked       TINYINT(1) NOT NULL DEFAULT 0,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_kalloc_uuid (uuid),
-  UNIQUE KEY uk_kalloc_natural (workspace_id, kpi_template_id, fiscal_year_id, subject_party_id, hierarchy_level_id),
-  KEY idx_kalloc_tmpl_fy (kpi_template_id, fiscal_year_id),
-  CONSTRAINT fk_kalloc_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_kalloc_ws FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_kalloc_cu FOREIGN KEY (control_unit_id) REFERENCES control_unit(id),
-  CONSTRAINT fk_kalloc_tmpl FOREIGN KEY (kpi_template_id) REFERENCES kpi_template(id),
-  CONSTRAINT fk_kalloc_fy FOREIGN KEY (fiscal_year_id) REFERENCES fiscal_year(id),
-  CONSTRAINT fk_kalloc_period FOREIGN KEY (period_type_id) REFERENCES ref_period_type(id),
-  CONSTRAINT fk_kalloc_subj FOREIGN KEY (subject_party_id) REFERENCES subject_party(id),
-  CONSTRAINT fk_kalloc_hlvl FOREIGN KEY (hierarchy_level_id) REFERENCES ref_hierarchy_level(id),
-  CONSTRAINT fk_kalloc_status FOREIGN KEY (status_id) REFERENCES ref_allocation_status(id),
-  CONSTRAINT fk_kalloc_appr FOREIGN KEY (approval_status_id) REFERENCES ref_approval_status(id)
+  allocation_id      CHAR(36)     NOT NULL,
+  account_id         CHAR(36)     NOT NULL,
+  workspace_id       CHAR(36)     NOT NULL,
+  control_unit_id    CHAR(36)     NULL,
+  template_id        CHAR(36)     NOT NULL,
+  fiscal_year_id     CHAR(36)     NOT NULL,
+  period_type_id     INT          NOT NULL,
+  subject_party_id   CHAR(36)     NOT NULL,
+  hierarchy_level_id INT          NOT NULL,
+  allocated_label    VARCHAR(255) NOT NULL,
+  status_id          INT          NOT NULL DEFAULT 1,
+  approval_status_id INT          NOT NULL DEFAULT 1,
+  is_locked          TINYINT(1)   NOT NULL DEFAULT 0,
+  created_at         TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by         CHAR(36)     NULL,
+  updated_at         TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by         CHAR(36)     NULL,
+  kpi_allocation_workflow_status ENUM('draft','submitted','approved','locked') NULL DEFAULT 'draft',
+  PRIMARY KEY (allocation_id),
+  UNIQUE KEY uk_kalloc_natural (workspace_id, template_id, fiscal_year_id, subject_party_id, hierarchy_level_id),
+  KEY idx_kalloc_tmpl_fy (template_id, fiscal_year_id),
+  CONSTRAINT fk_kalloc_cu     FOREIGN KEY (control_unit_id)    REFERENCES control_unit(control_unit_id),
+  CONSTRAINT fk_kalloc_tmpl   FOREIGN KEY (template_id)        REFERENCES kpi_template(template_id),
+  CONSTRAINT fk_kalloc_fy     FOREIGN KEY (fiscal_year_id)     REFERENCES fiscal_year(fiscal_year_id),
+  CONSTRAINT fk_kalloc_pt     FOREIGN KEY (period_type_id)     REFERENCES period_type(period_type_id),
+  CONSTRAINT fk_kalloc_subj   FOREIGN KEY (subject_party_id)   REFERENCES kpi_subject_party(subject_party_id),
+  CONSTRAINT fk_kalloc_hlvl   FOREIGN KEY (hierarchy_level_id) REFERENCES kpi_hierarchy_level_master(id),
+  CONSTRAINT fk_kalloc_status FOREIGN KEY (status_id)          REFERENCES kpi_allocation_status_master(id),
+  CONSTRAINT fk_kalloc_appr   FOREIGN KEY (approval_status_id) REFERENCES kpi_approval_status_master(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- KPI Target lines: annual + H1/H2 + quarterly splits (KPITarget)
--- -----------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS kpi_target (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  kpi_allocation_id BIGINT UNSIGNED NOT NULL,
-  kpi_master_id   BIGINT UNSIGNED NOT NULL,
-  kpi_code_snapshot VARCHAR(64) NOT NULL,
-  kpi_name_snapshot VARCHAR(255) NOT NULL,
-  ref_unit_type_id SMALLINT UNSIGNED NOT NULL,
-  weight_pct      DECIMAL(9,4) NOT NULL,
-  annual_target   DECIMAL(24,8) NOT NULL,
-  h1_target       DECIMAL(24,8) NOT NULL,
-  h2_target       DECIMAL(24,8) NOT NULL,
-  q1_target       DECIMAL(24,8) NOT NULL,
-  q2_target       DECIMAL(24,8) NOT NULL,
-  q3_target       DECIMAL(24,8) NOT NULL,
-  q4_target       DECIMAL(24,8) NOT NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_ktgt_uuid (uuid),
-  UNIQUE KEY uk_ktgt_alloc_kpi (kpi_allocation_id, kpi_master_id),
-  KEY idx_ktgt_alloc (kpi_allocation_id),
-  CONSTRAINT fk_ktgt_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_ktgt_ws FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_ktgt_alloc FOREIGN KEY (kpi_allocation_id) REFERENCES kpi_allocation(id) ON DELETE CASCADE,
-  CONSTRAINT fk_ktgt_kpi FOREIGN KEY (kpi_master_id) REFERENCES kpi_master(id),
-  CONSTRAINT fk_ktgt_ut FOREIGN KEY (ref_unit_type_id) REFERENCES ref_unit_type(id)
+-- KPI Target Detail (annual + H1/H2 + quarterly splits per allocation × KPI)
+-- Richer complement to KPI_targets: stores period splits and weight.
+CREATE TABLE IF NOT EXISTS kpi_target_detail (
+  target_detail_id  CHAR(36)      NOT NULL,
+  account_id        CHAR(36)      NOT NULL,
+  workspace_id      CHAR(36)      NOT NULL,
+  allocation_id     CHAR(36)      NOT NULL,
+  kpi_id            INT           NOT NULL,
+  kpi_code_snapshot VARCHAR(64)   NOT NULL,
+  kpi_name_snapshot VARCHAR(255)  NOT NULL,
+  unit_type_id      INT           NOT NULL,
+  weight_pct        DECIMAL(9,4)  NOT NULL,
+  annual_target     DECIMAL(24,8) NOT NULL,
+  h1_target         DECIMAL(24,8) NOT NULL DEFAULT 0,
+  h2_target         DECIMAL(24,8) NOT NULL DEFAULT 0,
+  q1_target         DECIMAL(24,8) NOT NULL DEFAULT 0,
+  q2_target         DECIMAL(24,8) NOT NULL DEFAULT 0,
+  q3_target         DECIMAL(24,8) NOT NULL DEFAULT 0,
+  q4_target         DECIMAL(24,8) NOT NULL DEFAULT 0,
+  created_at        TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by        CHAR(36)      NULL,
+  updated_at        TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by        CHAR(36)      NULL,
+  PRIMARY KEY (target_detail_id),
+  UNIQUE KEY uk_ktd_alloc_kpi (allocation_id, kpi_id),
+  KEY idx_ktd_alloc (allocation_id),
+  CONSTRAINT fk_ktd_alloc FOREIGN KEY (allocation_id) REFERENCES kpi_allocation(allocation_id) ON DELETE CASCADE,
+  CONSTRAINT fk_ktd_kpi   FOREIGN KEY (kpi_id)        REFERENCES KPI_master(kpi_id),
+  CONSTRAINT fk_ktd_ut    FOREIGN KEY (unit_type_id)  REFERENCES kpi_unit_type_master(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- Target distribution down to day/week/month (AllocationForm distribution views)
--- -----------------------------------------------------------------------------
-
+-- KPI Target Distribution (daily / weekly / monthly sub-period splits)
 CREATE TABLE IF NOT EXISTS kpi_target_distribution (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  kpi_target_id   BIGINT UNSIGNED NOT NULL,
-  distribution_type_id SMALLINT UNSIGNED NOT NULL,
-  period_sequence SMALLINT UNSIGNED NOT NULL,
-  period_label    VARCHAR(32) NULL,
-  amount          DECIMAL(24,8) NOT NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_ktdist_tgt_seq (kpi_target_id, distribution_type_id, period_sequence),
-  CONSTRAINT fk_ktdist_tgt FOREIGN KEY (kpi_target_id) REFERENCES kpi_target(id) ON DELETE CASCADE,
-  CONSTRAINT fk_ktdist_dtype FOREIGN KEY (distribution_type_id) REFERENCES ref_distribution_type(id)
+  distribution_id      CHAR(36)      NOT NULL,
+  target_detail_id     CHAR(36)      NOT NULL,
+  distribution_type_id INT           NOT NULL,
+  period_sequence      SMALLINT      NOT NULL,
+  period_label         VARCHAR(32)   NULL,
+  amount               DECIMAL(24,8) NOT NULL,
+  created_at           TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by           CHAR(36)      NULL,
+  updated_at           TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by           CHAR(36)      NULL,
+  PRIMARY KEY (distribution_id),
+  UNIQUE KEY uk_ktdist_seq (target_detail_id, distribution_type_id, period_sequence),
+  CONSTRAINT fk_ktdist_tgt   FOREIGN KEY (target_detail_id)     REFERENCES kpi_target_detail(target_detail_id) ON DELETE CASCADE,
+  CONSTRAINT fk_ktdist_dtype FOREIGN KEY (distribution_type_id) REFERENCES kpi_distribution_type_master(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- Actuals (ActualEntry) — grain: allocation × KPI × period × employee (optional)
--- -----------------------------------------------------------------------------
-
+-- KPI Actual (enriched actual entries with attainment and RAG tracking)
+-- Workflow state: kpi_actual_workflow_status ENUM
 CREATE TABLE IF NOT EXISTS kpi_actual (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  kpi_allocation_id BIGINT UNSIGNED NOT NULL,
-  kpi_master_id   BIGINT UNSIGNED NOT NULL,
-  subject_party_id BIGINT UNSIGNED NOT NULL,
-  employee_ref    VARCHAR(64) NULL,
-  employee_name   VARCHAR(255) NULL,
-  user_role_id    SMALLINT UNSIGNED NOT NULL,
-  period_type_id  SMALLINT UNSIGNED NOT NULL,
-  period_label    VARCHAR(64) NOT NULL,
-  fiscal_year_id  BIGINT UNSIGNED NOT NULL,
-  time_key_start  INT UNSIGNED NULL,
-  time_key_end    INT UNSIGNED NULL,
-  target_value    DECIMAL(24,8) NOT NULL,
-  actual_value    DECIMAL(24,8) NOT NULL,
-  attainment_pct  DECIMAL(9,4) NOT NULL,
-  prior_period_pct DECIMAL(9,4) NOT NULL DEFAULT 0,
-  rag_id          SMALLINT UNSIGNED NOT NULL,
-  trend_json      JSON NULL,
-  data_source     VARCHAR(64) NULL DEFAULT 'manual',
-  entry_status_id SMALLINT UNSIGNED NOT NULL,
-  approval_status_id SMALLINT UNSIGNED NOT NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_kact_uuid (uuid),
-  KEY idx_kact_alloc_kpi (kpi_allocation_id, kpi_master_id),
-  KEY idx_kact_period (fiscal_year_id, period_label),
-  CONSTRAINT fk_kact_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_kact_ws FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_kact_alloc FOREIGN KEY (kpi_allocation_id) REFERENCES kpi_allocation(id) ON DELETE CASCADE,
-  CONSTRAINT fk_kact_kpi FOREIGN KEY (kpi_master_id) REFERENCES kpi_master(id),
-  CONSTRAINT fk_kact_subj FOREIGN KEY (subject_party_id) REFERENCES subject_party(id),
-  CONSTRAINT fk_kact_role FOREIGN KEY (user_role_id) REFERENCES ref_user_role(id),
-  CONSTRAINT fk_kact_ptype FOREIGN KEY (period_type_id) REFERENCES ref_period_type(id),
-  CONSTRAINT fk_kact_fy FOREIGN KEY (fiscal_year_id) REFERENCES fiscal_year(id),
-  CONSTRAINT fk_kact_rag FOREIGN KEY (rag_id) REFERENCES ref_trend_rag(id),
-  CONSTRAINT fk_kact_entry_st FOREIGN KEY (entry_status_id) REFERENCES ref_actual_entry_status(id),
-  CONSTRAINT fk_kact_appr FOREIGN KEY (approval_status_id) REFERENCES ref_approval_status(id),
-  CONSTRAINT fk_kact_tk_s FOREIGN KEY (time_key_start) REFERENCES dim_time(time_key),
-  CONSTRAINT fk_kact_tk_e FOREIGN KEY (time_key_end) REFERENCES dim_time(time_key)
+  actual_id          CHAR(36)      NOT NULL,
+  account_id         CHAR(36)      NOT NULL,
+  workspace_id       CHAR(36)      NOT NULL,
+  allocation_id      CHAR(36)      NOT NULL,
+  kpi_id             INT           NOT NULL,
+  subject_party_id   CHAR(36)      NOT NULL,
+  employee_ref       VARCHAR(64)   NULL,
+  employee_name      VARCHAR(255)  NULL,
+  period_type_id     INT           NOT NULL,
+  period_label       VARCHAR(64)   NOT NULL,
+  fiscal_year_id     CHAR(36)      NOT NULL,
+  date_start         INT           NULL COMMENT 'FK → time_dimension.date_id',
+  date_end           INT           NULL COMMENT 'FK → time_dimension.date_id',
+  target_value       DECIMAL(24,8) NOT NULL,
+  actual_value       DECIMAL(24,8) NOT NULL,
+  attainment_pct     DECIMAL(9,4)  NOT NULL,
+  prior_period_pct   DECIMAL(9,4)  NOT NULL DEFAULT 0,
+  rag_id             INT           NOT NULL,
+  trend_json         JSON          NULL,
+  data_source        VARCHAR(64)   NULL DEFAULT 'manual',
+  entry_status_id    INT           NOT NULL,
+  approval_status_id INT           NOT NULL,
+  created_at         TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by         CHAR(36)      NULL,
+  updated_at         TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by         CHAR(36)      NULL,
+  kpi_actual_workflow_status ENUM('draft','submitted','approved','rejected') NULL DEFAULT 'draft',
+  PRIMARY KEY (actual_id),
+  KEY idx_kact_alloc_kpi (allocation_id, kpi_id),
+  KEY idx_kact_period    (fiscal_year_id, period_label),
+  CONSTRAINT fk_kact_alloc    FOREIGN KEY (allocation_id)      REFERENCES kpi_allocation(allocation_id) ON DELETE CASCADE,
+  CONSTRAINT fk_kact_kpi      FOREIGN KEY (kpi_id)             REFERENCES KPI_master(kpi_id),
+  CONSTRAINT fk_kact_subj     FOREIGN KEY (subject_party_id)   REFERENCES kpi_subject_party(subject_party_id),
+  CONSTRAINT fk_kact_fy       FOREIGN KEY (fiscal_year_id)     REFERENCES fiscal_year(fiscal_year_id),
+  CONSTRAINT fk_kact_rag      FOREIGN KEY (rag_id)             REFERENCES kpi_rag_master(id),
+  CONSTRAINT fk_kact_entry_st FOREIGN KEY (entry_status_id)    REFERENCES kpi_actual_entry_status_master(id),
+  CONSTRAINT fk_kact_appr     FOREIGN KEY (approval_status_id) REFERENCES kpi_approval_status_master(id),
+  CONSTRAINT fk_kact_ds       FOREIGN KEY (date_start)         REFERENCES time_dimension(date_id),
+  CONSTRAINT fk_kact_de       FOREIGN KEY (date_end)           REFERENCES time_dimension(date_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- Performance snapshot (materialized target vs actual; reporting / charts)
--- -----------------------------------------------------------------------------
-
+-- KPI Performance Snapshot (materialised target vs actual; powers reporting / charts)
 CREATE TABLE IF NOT EXISTS kpi_performance (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  kpi_allocation_id BIGINT UNSIGNED NOT NULL,
-  kpi_master_id   BIGINT UNSIGNED NOT NULL,
-  fiscal_year_id  BIGINT UNSIGNED NOT NULL,
-  period_type_id  SMALLINT UNSIGNED NOT NULL,
-  period_index    SMALLINT UNSIGNED NOT NULL,
-  period_label    VARCHAR(64) NOT NULL,
-  target_value    DECIMAL(24,8) NOT NULL,
-  actual_value    DECIMAL(24,8) NOT NULL,
-  variance_value  DECIMAL(24,8) NOT NULL,
-  attainment_pct  DECIMAL(9,4) NOT NULL,
-  weighted_score  DECIMAL(24,8) NULL,
-  rag_id          SMALLINT UNSIGNED NOT NULL,
-  calc_run_at     DATETIME(3) NOT NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_kperf_grain (kpi_allocation_id, kpi_master_id, fiscal_year_id, period_type_id, period_index),
+  performance_id CHAR(36)      NOT NULL,
+  account_id     CHAR(36)      NOT NULL,
+  workspace_id   CHAR(36)      NOT NULL,
+  allocation_id  CHAR(36)      NOT NULL,
+  kpi_id         INT           NOT NULL,
+  fiscal_year_id CHAR(36)      NOT NULL,
+  period_type_id INT           NOT NULL,
+  period_index   SMALLINT      NOT NULL,
+  period_label   VARCHAR(64)   NOT NULL,
+  target_value   DECIMAL(24,8) NOT NULL,
+  actual_value   DECIMAL(24,8) NOT NULL,
+  variance_value DECIMAL(24,8) NOT NULL,
+  attainment_pct DECIMAL(9,4)  NOT NULL,
+  weighted_score DECIMAL(24,8) NULL,
+  rag_id         INT           NOT NULL,
+  calc_run_at    TIMESTAMP     NOT NULL,
+  created_at     TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (performance_id),
+  UNIQUE KEY uk_kperf_grain (allocation_id, kpi_id, fiscal_year_id, period_type_id, period_index),
   KEY idx_kperf_ws_fy (workspace_id, fiscal_year_id),
-  CONSTRAINT fk_kperf_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_kperf_ws FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_kperf_alloc FOREIGN KEY (kpi_allocation_id) REFERENCES kpi_allocation(id) ON DELETE CASCADE,
-  CONSTRAINT fk_kperf_kpi FOREIGN KEY (kpi_master_id) REFERENCES kpi_master(id),
-  CONSTRAINT fk_kperf_fy FOREIGN KEY (fiscal_year_id) REFERENCES fiscal_year(id),
-  CONSTRAINT fk_kperf_pt FOREIGN KEY (period_type_id) REFERENCES ref_period_type(id),
-  CONSTRAINT fk_kperf_rag FOREIGN KEY (rag_id) REFERENCES ref_trend_rag(id)
+  CONSTRAINT fk_kperf_alloc FOREIGN KEY (allocation_id)  REFERENCES kpi_allocation(allocation_id) ON DELETE CASCADE,
+  CONSTRAINT fk_kperf_kpi   FOREIGN KEY (kpi_id)         REFERENCES KPI_master(kpi_id),
+  CONSTRAINT fk_kperf_fy    FOREIGN KEY (fiscal_year_id) REFERENCES fiscal_year(fiscal_year_id),
+  CONSTRAINT fk_kperf_pt    FOREIGN KEY (period_type_id) REFERENCES period_type(period_type_id),
+  CONSTRAINT fk_kperf_rag   FOREIGN KEY (rag_id)         REFERENCES kpi_rag_master(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- Period close & carry-forward (PeriodTracker)
--- -----------------------------------------------------------------------------
-
+-- KPI Period Instance (open/close state per template × fiscal year × period)
 CREATE TABLE IF NOT EXISTS kpi_period_instance (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  kpi_template_id BIGINT UNSIGNED NOT NULL,
-  fiscal_year_id  BIGINT UNSIGNED NOT NULL,
-  period_type_id  SMALLINT UNSIGNED NOT NULL,
-  period_index    SMALLINT UNSIGNED NOT NULL,
-  period_label    VARCHAR(64) NOT NULL,
-  state_enum      ENUM('open','closed') NOT NULL DEFAULT 'open',
-  closed_at       DATETIME(3) NULL,
-  closed_by       BIGINT UNSIGNED NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_kpi_period_grain (workspace_id, kpi_template_id, fiscal_year_id, period_type_id, period_index),
-  CONSTRAINT fk_kpip_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_kpip_ws FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_kpip_tmpl FOREIGN KEY (kpi_template_id) REFERENCES kpi_template(id),
-  CONSTRAINT fk_kpip_fy FOREIGN KEY (fiscal_year_id) REFERENCES fiscal_year(id),
-  CONSTRAINT fk_kpip_pt FOREIGN KEY (period_type_id) REFERENCES ref_period_type(id)
+  instance_id    CHAR(36)    NOT NULL,
+  account_id     CHAR(36)    NOT NULL,
+  workspace_id   CHAR(36)    NOT NULL,
+  template_id    CHAR(36)    NOT NULL,
+  fiscal_year_id CHAR(36)    NOT NULL,
+  period_type_id INT         NOT NULL,
+  period_index   SMALLINT    NOT NULL,
+  period_label   VARCHAR(64) NOT NULL,
+  state_enum     ENUM('open','closed') NOT NULL DEFAULT 'open',
+  closed_at      TIMESTAMP   NULL,
+  closed_by      CHAR(36)    NULL,
+  created_at     TIMESTAMP   NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by     CHAR(36)    NULL,
+  updated_at     TIMESTAMP   NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by     CHAR(36)    NULL,
+  PRIMARY KEY (instance_id),
+  UNIQUE KEY uk_kpi_period_grain (workspace_id, template_id, fiscal_year_id, period_type_id, period_index),
+  CONSTRAINT fk_kpip_tmpl FOREIGN KEY (template_id)    REFERENCES kpi_template(template_id),
+  CONSTRAINT fk_kpip_fy   FOREIGN KEY (fiscal_year_id) REFERENCES fiscal_year(fiscal_year_id),
+  CONSTRAINT fk_kpip_pt   FOREIGN KEY (period_type_id) REFERENCES period_type(period_type_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- KPI Carry Forward Ledger (backlog in/out between periods)
 CREATE TABLE IF NOT EXISTS kpi_carry_forward_ledger (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  kpi_allocation_id BIGINT UNSIGNED NOT NULL,
-  kpi_master_id   BIGINT UNSIGNED NOT NULL,
-  from_period_key VARCHAR(64) NOT NULL,
-  to_period_key   VARCHAR(64) NOT NULL,
-  backlog_in      DECIMAL(24,8) NOT NULL,
-  backlog_out     DECIMAL(24,8) NOT NULL,
+  ledger_id            CHAR(36)      NOT NULL,
+  account_id           CHAR(36)      NOT NULL,
+  workspace_id         CHAR(36)      NOT NULL,
+  allocation_id        CHAR(36)      NOT NULL,
+  kpi_id               INT           NOT NULL,
+  from_period_key      VARCHAR(64)   NOT NULL,
+  to_period_key        VARCHAR(64)   NOT NULL,
+  backlog_in           DECIMAL(24,8) NOT NULL,
+  backlog_out          DECIMAL(24,8) NOT NULL,
   next_adjusted_target DECIMAL(24,8) NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  KEY idx_cf_alloc (kpi_allocation_id),
-  CONSTRAINT fk_cf_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_cf_ws FOREIGN KEY (workspace_id) REFERENCES workspace(id),
-  CONSTRAINT fk_cf_alloc FOREIGN KEY (kpi_allocation_id) REFERENCES kpi_allocation(id) ON DELETE CASCADE,
-  CONSTRAINT fk_cf_kpi FOREIGN KEY (kpi_master_id) REFERENCES kpi_master(id)
+  created_at           TIMESTAMP     NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by           CHAR(36)      NULL,
+  PRIMARY KEY (ledger_id),
+  KEY idx_cf_alloc (allocation_id),
+  CONSTRAINT fk_cf_alloc FOREIGN KEY (allocation_id) REFERENCES kpi_allocation(allocation_id) ON DELETE CASCADE,
+  CONSTRAINT fk_cf_kpi   FOREIGN KEY (kpi_id)        REFERENCES KPI_master(kpi_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- Comments & notes
--- -----------------------------------------------------------------------------
-
+-- KPI Comments & Notes (polymorphic: covers both old and new KPI tables)
 CREATE TABLE IF NOT EXISTS kpi_comment (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  entity_type     ENUM('kpi_master','kpi_allocation','kpi_target','kpi_actual','kpi_performance') NOT NULL,
-  entity_id       BIGINT UNSIGNED NOT NULL,
-  body            TEXT NOT NULL,
-  is_internal     TINYINT(1) NOT NULL DEFAULT 0,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  created_by      BIGINT UNSIGNED NULL,
-  updated_by      BIGINT UNSIGNED NULL,
-  UNIQUE KEY uk_kcomm_uuid (uuid),
-  KEY idx_kcomm_entity (entity_type, entity_id),
-  CONSTRAINT fk_kcomm_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_kcomm_ws FOREIGN KEY (workspace_id) REFERENCES workspace(id)
+  comment_id   CHAR(36)   NOT NULL,
+  account_id   CHAR(36)   NOT NULL,
+  workspace_id CHAR(36)   NOT NULL,
+  entity_type  ENUM('KPI_master','KPI_year_plans','KPI_targets',
+                    'kpi_allocation','kpi_target_detail',
+                    'kpi_actual','kpi_performance') NOT NULL,
+  entity_id    CHAR(36)   NOT NULL,
+  body         TEXT       NOT NULL,
+  is_internal  TINYINT(1) NOT NULL DEFAULT 0,
+  created_at   TIMESTAMP  NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by   CHAR(36)   NULL,
+  updated_at   TIMESTAMP  NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by   CHAR(36)   NULL,
+  PRIMARY KEY (comment_id),
+  KEY idx_kcomm_entity (entity_type, entity_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- Allocation / target history (UI: AllocationHistoryEntry)
--- -----------------------------------------------------------------------------
-
+-- KPI Allocation Event Log (history of target-set / lock / distribute actions)
 CREATE TABLE IF NOT EXISTS kpi_allocation_event (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  kpi_allocation_id BIGINT UNSIGNED NOT NULL,
-  event_time      DATETIME(3) NOT NULL,
-  changed_by      BIGINT UNSIGNED NULL,
-  action_code     ENUM('target-set','distributed','locked','template-changed') NOT NULL,
-  detail_text     TEXT NOT NULL,
-  KEY idx_kae_alloc (kpi_allocation_id),
-  CONSTRAINT fk_kae_alloc FOREIGN KEY (kpi_allocation_id) REFERENCES kpi_allocation(id) ON DELETE CASCADE
+  event_id      CHAR(36)  NOT NULL,
+  allocation_id CHAR(36)  NOT NULL,
+  event_time    TIMESTAMP NOT NULL,
+  changed_by    CHAR(36)  NULL,
+  action_code   ENUM('target-set','distributed','locked','template-changed') NOT NULL,
+  detail_text   TEXT      NOT NULL,
+  PRIMARY KEY (event_id),
+  KEY idx_kae_alloc (allocation_id),
+  CONSTRAINT fk_kae_alloc FOREIGN KEY (allocation_id) REFERENCES kpi_allocation(allocation_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- Audit trail (row-level history for KPI master & allocations)
--- -----------------------------------------------------------------------------
-
+-- KPI Audit Log (row-level change history for all KPI entities)
 CREATE TABLE IF NOT EXISTS kpi_audit_log (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  entity_type     VARCHAR(64) NOT NULL,
-  entity_uuid     CHAR(36) NOT NULL,
-  action          ENUM('insert','update','delete') NOT NULL,
-  changed_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  changed_by      BIGINT UNSIGNED NULL,
-  old_json        JSON NULL,
-  new_json        JSON NULL,
-  KEY idx_kal_entity (entity_type, entity_uuid),
-  KEY idx_kal_ws_time (workspace_id, changed_at),
-  CONSTRAINT fk_kal_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_kal_ws FOREIGN KEY (workspace_id) REFERENCES workspace(id)
+  log_id       CHAR(36)    NOT NULL,
+  account_id   CHAR(36)    NOT NULL,
+  workspace_id CHAR(36)    NOT NULL,
+  entity_type  VARCHAR(64) NOT NULL,
+  entity_id    CHAR(36)    NOT NULL,
+  action       ENUM('insert','update','delete') NOT NULL,
+  changed_at   TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  changed_by   CHAR(36)    NULL,
+  old_json     JSON        NULL,
+  new_json     JSON        NULL,
+  PRIMARY KEY (log_id),
+  KEY idx_kal_entity  (entity_type, entity_id),
+  KEY idx_kal_ws_time (workspace_id, changed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- KPI Master Version History (snapshot per version change)
 CREATE TABLE IF NOT EXISTS kpi_master_history (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  kpi_master_id   BIGINT UNSIGNED NOT NULL,
-  version_no      INT NOT NULL,
-  snapshot_json   JSON NOT NULL,
-  effective_from  DATETIME(3) NOT NULL,
-  effective_to    DATETIME(3) NULL,
-  changed_by      BIGINT UNSIGNED NULL,
-  KEY idx_kmh_kpi (kpi_master_id),
-  CONSTRAINT fk_kmh_kpi FOREIGN KEY (kpi_master_id) REFERENCES kpi_master(id) ON DELETE CASCADE
+  history_id     CHAR(36)  NOT NULL,
+  kpi_id         INT       NOT NULL,
+  version_no     INT       NOT NULL,
+  snapshot_json  JSON      NOT NULL,
+  effective_from TIMESTAMP NOT NULL,
+  effective_to   TIMESTAMP NULL,
+  changed_by     CHAR(36)  NULL,
+  PRIMARY KEY (history_id),
+  KEY idx_kmh_kpi (kpi_id),
+  CONSTRAINT fk_kmh_kpi FOREIGN KEY (kpi_id) REFERENCES KPI_master(kpi_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- Saved analytics filters (ActualsVsTarget "Save Filter")
--- -----------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS user_filter_preset (
-  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid            CHAR(36) NOT NULL,
-  account_id      BIGINT UNSIGNED NOT NULL,
-  workspace_id    BIGINT UNSIGNED NOT NULL,
-  user_id         BIGINT UNSIGNED NOT NULL,
-  name            VARCHAR(128) NOT NULL,
-  filter_json     JSON NOT NULL,
-  created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  UNIQUE KEY uk_ufp_uuid (uuid),
-  UNIQUE KEY uk_ufp_user_name (workspace_id, user_id, name),
-  CONSTRAINT fk_ufp_account FOREIGN KEY (account_id) REFERENCES account(id),
-  CONSTRAINT fk_ufp_ws FOREIGN KEY (workspace_id) REFERENCES workspace(id)
+-- User Saved Filter Presets (ActualsVsTarget "Save Filter" screen)
+CREATE TABLE IF NOT EXISTS kpi_user_filter_preset (
+  preset_id    CHAR(36)     NOT NULL,
+  account_id   CHAR(36)     NOT NULL,
+  workspace_id CHAR(36)     NOT NULL,
+  user_id      CHAR(36)     NOT NULL,
+  name         VARCHAR(128) NOT NULL,
+  filter_json  JSON         NOT NULL,
+  created_at   TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at   TIMESTAMP    NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (preset_id),
+  UNIQUE KEY uk_ufp_user_name (workspace_id, user_id, name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
--- -----------------------------------------------------------------------------
--- Seed reference data (minimal; expand per environment)
--- -----------------------------------------------------------------------------
+-- =============================================================================
+-- SECTION 5 : SEED DATA
+-- Platform tables (period_type, target_status_master, plan_status_master) are
+-- already seeded in dev; included here for greenfield deploys.
+-- =============================================================================
 
-INSERT IGNORE INTO ref_period_type (id, code, label, sort_order) VALUES
- (1,'daily','Daily',10),
- (2,'weekly','Weekly',20),
- (3,'monthly','Monthly',30),
- (4,'quarterly','Quarterly',40),
- (5,'annual','Annual',50);
+INSERT IGNORE INTO period_type (period_type_id, period_type_name) VALUES
+  (1,'Daily'),(2,'Weekly'),(3,'Monthly'),(4,'Quarterly'),(5,'Annual');
 
-INSERT IGNORE INTO ref_distribution_type (id, code, label) VALUES
- (1,'daily','Daily'),
- (2,'weekly','Weekly'),
- (3,'monthly','Monthly'),
- (4,'annual_quarterly','Annual / Quarterly split');
+INSERT IGNORE INTO target_status_master (target_status_id, target_status_name) VALUES
+  (1,'Draft'),(2,'Approved'),(3,'Locked');
 
-INSERT IGNORE INTO ref_aggregation_type (id, code, label) VALUES
- (1,'sum','SUM'),
- (2,'avg','AVG'),
- (3,'min','MIN'),
- (4,'max','MAX'),
- (5,'weighted_avg','Weighted average'),
- (6,'last','Last value');
+INSERT IGNORE INTO plan_status_master (plan_status_id, plan_status_name) VALUES
+  (1,'Draft'),(2,'Submitted'),(3,'Approved'),(4,'Locked');
 
-INSERT IGNORE INTO ref_calculation_type (id, code, label) VALUES
- (1,'auto','Auto / System'),
- (2,'manual','Manual'),
- (3,'formula','Formula'),
- (4,'cumulative_ytd','Cumulative YTD'),
- (5,'rolling_avg','Rolling average'),
- (6,'weighted_avg','Weighted average'),
- (7,'stored_procedure','Stored procedure');
+INSERT IGNORE INTO kpi_aggregation_type_master (id, code, label) VALUES
+  (1,'sum','SUM'),(2,'avg','AVG'),(3,'min','MIN'),(4,'max','MAX'),
+  (5,'weighted_avg','Weighted average'),(6,'last','Last value');
 
-INSERT IGNORE INTO ref_kpi_status (id, code, label) VALUES
- (1,'draft','Draft'),
- (2,'active','Active'),
- (3,'archived','Archived'),
- (4,'inactive','Inactive');
+INSERT IGNORE INTO kpi_calculation_type_master (id, code, label) VALUES
+  (1,'auto','Auto / System'),(2,'manual','Manual'),(3,'formula','Formula'),
+  (4,'cumulative_ytd','Cumulative YTD'),(5,'rolling_avg','Rolling average'),
+  (6,'weighted_avg','Weighted average'),(7,'stored_procedure','Stored procedure'),
+  (8,'percentage','Percentage');
 
-INSERT IGNORE INTO ref_approval_status (id, code, label) VALUES
- (1,'none','None'),
- (2,'pending','Pending'),
- (3,'approved','Approved'),
- (4,'rejected','Rejected');
+INSERT IGNORE INTO kpi_distribution_type_master (id, code, label) VALUES
+  (1,'daily','Daily'),(2,'weekly','Weekly'),(3,'monthly','Monthly'),
+  (4,'annual_quarterly','Annual / Quarterly split');
 
-INSERT IGNORE INTO ref_trend_rag (id, code, label) VALUES
- (1,'green','Green'),
- (2,'amber','Amber'),
- (3,'red','Red');
+INSERT IGNORE INTO kpi_rag_master (id, code, label) VALUES
+  (1,'green','Green'),(2,'amber','Amber'),(3,'red','Red');
 
-INSERT IGNORE INTO ref_unit_type (id, code, label) VALUES
- (1,'percentage','Percentage'),
- (2,'number','Number'),
- (3,'currency','Currency'),
- (4,'days','Days'),
- (5,'hours','Hours'),
- (6,'teu','TEU'),
- (7,'cbm','CBM'),
- (8,'tonnes','Tonnes'),
- (9,'score','Score'),
- (10,'ratio','Ratio');
+INSERT IGNORE INTO kpi_unit_type_master (id, code, label) VALUES
+  (1,'percentage','Percentage'),(2,'number','Number'),(3,'currency','Currency'),
+  (4,'days','Days'),(5,'hours','Hours'),(6,'teu','TEU'),(7,'cbm','CBM'),
+  (8,'tonnes','Tonnes'),(9,'score','Score'),(10,'ratio','Ratio');
 
-INSERT IGNORE INTO ref_shipment_mode (id, code, label) VALUES
- (1,'sea','Sea'),(2,'air','Air'),(3,'road','Road'),(4,'rail','Rail'),
- (5,'multimodal','Multimodal'),(6,'courier','Courier');
+INSERT IGNORE INTO kpi_trend_direction_master (id, code, label) VALUES
+  (1,'higher_better','Higher is better'),(2,'lower_better','Lower is better'),
+  (3,'target_range','Target range');
 
-INSERT IGNORE INTO ref_trade_direction (id, code, label) VALUES
- (1,'import','Import'),(2,'export','Export'),(3,'cross_trade','Cross trade'),
- (4,'import_clearance','Import clearance'),(5,'export_clearance','Export clearance');
+INSERT IGNORE INTO kpi_shipment_mode_master (id, code, label) VALUES
+  (1,'sea','Sea'),(2,'air','Air'),(3,'road','Road'),(4,'rail','Rail'),
+  (5,'multimodal','Multimodal'),(6,'courier','Courier');
 
-INSERT IGNORE INTO ref_business_scope (id, code, label) VALUES
- (1,'freight','Freight'),(2,'corporate','Corporate');
+INSERT IGNORE INTO kpi_trade_direction_master (id, code, label) VALUES
+  (1,'import','Import'),(2,'export','Export'),(3,'cross_trade','Cross trade'),
+  (4,'import_clearance','Import clearance'),(5,'export_clearance','Export clearance');
 
-INSERT IGNORE INTO ref_hierarchy_level (id, code, label, level_rank) VALUES
- (1,'leadership','Leadership',10),
- (2,'branch_head','Branch head',20),
- (3,'sales_manager','Sales manager',30),
- (4,'sales_lead','Sales lead',40),
- (5,'sales_executive','Sales executive',50);
+INSERT IGNORE INTO kpi_business_scope_master (id, code, label) VALUES
+  (1,'freight','Freight'),(2,'corporate','Corporate');
 
-INSERT IGNORE INTO ref_user_role (id, code, label) VALUES
- (1,'pricing_exec','Pricing exec'),
- (2,'pricing_mgr','Pricing mgr'),
- (3,'ops_exec','Ops exec'),
- (4,'ops_mgr','Ops mgr'),
- (5,'senior_mgmt','Senior mgmt'),
- (6,'branch_head','Branch head'),
- (7,'leadership','Leadership'),
- (8,'sales_manager','Sales manager'),
- (9,'sales_lead','Sales lead'),
- (10,'sales_executive','Sales executive');
+INSERT IGNORE INTO kpi_hierarchy_level_master (id, code, label, level_rank) VALUES
+  (1,'leadership','Leadership',10),(2,'branch_head','Branch head',20),
+  (3,'sales_manager','Sales manager',30),(4,'sales_lead','Sales lead',40),
+  (5,'sales_executive','Sales executive',50);
 
-INSERT IGNORE INTO ref_allocation_status (id, code, label) VALUES
- (1,'draft','Draft'),
- (2,'confirmed','Confirmed'),
- (3,'locked','Locked');
+INSERT IGNORE INTO kpi_approval_status_master (id, code, label) VALUES
+  (1,'none','None'),(2,'pending','Pending'),
+  (3,'approved','Approved'),(4,'rejected','Rejected');
 
-INSERT IGNORE INTO ref_subject_type (id, code, label) VALUES
- (1,'individual','Individual'),
- (2,'team','Team');
+INSERT IGNORE INTO kpi_allocation_status_master (id, code, label) VALUES
+  (1,'draft','Draft'),(2,'confirmed','Confirmed'),(3,'locked','Locked');
 
-INSERT IGNORE INTO ref_trend_direction (id, code, label) VALUES
- (1,'higher_better','Higher is better'),
- (2,'lower_better','Lower is better'),
- (3,'target_range','Target range');
+INSERT IGNORE INTO kpi_subject_type_master (id, code, label) VALUES
+  (1,'individual','Individual'),(2,'team','Team');
 
-INSERT IGNORE INTO ref_actual_entry_status (id, code, label) VALUES
- (1,'draft','Draft'),
- (2,'submitted','Submitted'),
- (3,'approved','Approved'),
- (4,'rejected','Rejected');
+INSERT IGNORE INTO kpi_actual_entry_status_master (id, code, label) VALUES
+  (1,'draft','Draft'),(2,'submitted','Submitted'),
+  (3,'approved','Approved'),(4,'rejected','Rejected');
+
+-- =============================================================================
+-- END OF FILE
+-- =============================================================================

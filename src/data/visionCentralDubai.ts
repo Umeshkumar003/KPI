@@ -324,6 +324,8 @@ export const VISION_TEMPLATE_SEED: Omit<KPITemplate, "tenantId"> = {
   category: "Sales",
   applicableRoles: FREIGHT_ROLES,
   shipmentModes: ["sea", "air", "road", "multimodal"],
+  tradeDirections: ["import", "export", "cross-trade"],
+  jobType: "All",
   periodType: "annual",
   description: "Targets from VISION CENTRAL 2025 - Dubai.xlsx (Dubai central + manager rollups).",
   statusId: "active",
